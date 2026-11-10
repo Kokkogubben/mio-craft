@@ -1,8 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core"]
-# src-tauri is added back by CI / on Windows: see NOTES-FOR-CLAUDE-CODE.md
-exclude = ["src-tauri"]
+members = ["crates/core", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

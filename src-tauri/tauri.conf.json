@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Claude Launcher",
+  "version": "0.1.0",
+  "identifier": "com.claudelauncher.app",
+  "build": {
+    "frontendDist": "../ui/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": { "script": "npm run dev --prefix ui", "cwd": ".." },
+    "beforeBuildCommand": { "script": "npm run build --prefix ui && npm run build --prefix mcp", "cwd": ".." }
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Claude Launcher",
+        "width": 1120,
+        "height": 740,
+        "minWidth": 880,
+        "minHeight": 580
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "resources": {
+      "../mcp/dist/claude-launcher-mcp.mjs": "mcp/claude-launcher-mcp.mjs"
+    },
+    "windows": {
+      "nsis": { "installMode": "currentUser" }
+    }
+  }
+}

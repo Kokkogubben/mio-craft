@@ -1,0 +1,22 @@
+{
+  "name": "claude-launcher-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that lets Claude Code create, build and install Minecraft mods through Claude Launcher",
+  "type": "module",
+  "private": true,
+  "bin": { "claude-launcher-mcp": "dist/claude-launcher-mcp.mjs" },
+  "scripts": {
+    "build": "tsc --noEmit && esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist/claude-launcher-mcp.mjs --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/claude-launcher-mcp.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0"
+  }
+}

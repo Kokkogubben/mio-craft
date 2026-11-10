@@ -1,0 +1,22 @@
+[package]
+name = "claude-launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "A lightweight Minecraft launcher that Claude Code can build mods for"
+
+[lib]
+name = "claude_launcher_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+launcher-core = { path = "../crates/core" }
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["fs"] }

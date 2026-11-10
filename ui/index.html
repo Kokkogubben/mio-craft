@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Claude Launcher</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <aside id="sidebar">
+        <div class="brand">
+          <img src="/icon.png" alt="" width="28" height="28" />
+          <span>Claude Launcher</span>
+        </div>
+        <div class="side-head">
+          <span>Instances</span>
+          <button class="icon-btn" data-action="new-instance" title="New instance" aria-label="New instance">+</button>
+        </div>
+        <nav id="instance-list"></nav>
+        <div id="side-foot"></div>
+      </aside>
+      <main id="main"></main>
+    </div>
+    <footer id="statusbar"></footer>
+    <div id="modal-root"></div>
+    <div id="toasts"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,96 @@
+# Notes for Claude Code
+
+This project was written in a sandbox that could **not** reach Mojang, Fabric,
+NeoForge, Adoptium or Gradle servers, and couldn't build for Windows. Everything
+below compiles and the core's unit tests pass (`cargo test -p launcher-core`, 24
+tests including a live test of the local API), the MCP server was smoke-tested
+against the headless core, and the UI was checked in a browser against seeded
+data. What follows has **not** been run for real yet. Please verify it on the
+user's Windows machine, roughly in this order, and fix whatever breaks.
+
+## 1. Desktop shell compiles (`src-tauri/`)
+
+Never compiled. Run `npm run setup` then `npm run dev` and fix any errors in
+`src-tauri/src/lib.rs`. Things to look at:
+- `tauri_plugin_opener::open_path` / `open_url` signatures.
+- `tauri.conf.json`: `beforeDevCommand` / `beforeBuildCommand` use the object
+  form with `"cwd": ".."` and the bundle resource mapping for the MCP script.
+- The webview (`http://tauri.localhost`) calls the API at `http://127.0.0.1:<port>`;
+  the core sends permissive CORS headers. Confirm `fetch` and `EventSource`
+  both work (no mixed-content or CSP blocking; CSP is null).
+
+## 2. Vanilla install and launch
+
+Create a vanilla instance (e.g. 1.21.1) and press Play. Check:
+- The version list loads (`mojang::manifest`).
+- Libraries, assets and Java (Adoptium JDK zip) download and extract to
+  `%APPDATA%\ClaudeLauncher`.
+- The game launches. If it doesn't, compare the command in `launch::plan` with
+  what the official launcher uses (argument rules, natives, classpath).
+- Also try an old version (e.g. 1.8.9, which uses `minecraftArguments` and natives
+  extraction) and a modern one.
+
+Playing needs a signed-in account (section 5). Before that, the quickest way to
+test launching is a mod project's dev client (section 4).
+
+## 3. Loaders
+
+- **Fabric**: `loaders::install_fabric` uses the profile JSON from Fabric meta.
+  Should just work.
+- **NeoForge**: `loaders::install_neoforge` runs the official installer with
+  `--install-client <data dir>` (falling back to `--installClient`). Check:
+  - Which flag the current installer actually accepts.
+  - That it writes `versions/neoforge-<ver>/neoforge-<ver>.json` under our data dir.
+  - That launching works with our classpath. We hard-link the vanilla client
+    jar as `versions/neoforge-<ver>/neoforge-<ver>.jar` because NeoForge's
+    `-DignoreList` refers to `${version_name}.jar`.
+- NeoForge version filtering for year-based Minecraft versions (26.1 → `26.1.0.x`)
+  is a guess from the version naming. Check `loaders::neoforge_prefix` against
+  the real NeoForge maven list.
+
+## 4. Mod templates and builds (most likely to need fixing)
+
+Build tool versions are pinned per era in `crates/core/src/templates.rs`:
+
+| Era | Gradle | Plugin |
+|---|---|---|
+| Fabric, MC ≤ 1.21.x | 8.14.3 | `fabric-loom` 1.11-SNAPSHOT, official mappings |
+| Fabric, MC 26.x (unobfuscated) | 9.2.1 | `net.fabricmc.fabric-loom`, latest from maven, `implementation` deps, no mappings |
+| NeoForge | 8.14.3 (9.2.1 for 26.x) | `net.neoforged.moddev`, latest from maven |
+
+The 26.x Fabric setup (plugin id, no `mappings` line, `implementation` instead
+of `modImplementation`) is the least certain part; check it against
+https://docs.fabricmc.net/develop/. Also check:
+- Gradle runs on a JDK ≥ 21 and compiles to the Minecraft version's Java target.
+  The target JDK is passed via `org.gradle.java.installations.paths`.
+  Confirm NeoForge's toolchain resolution picks it up.
+- Old Fabric versions (1.14.4–1.16.5, Java 8) with Loom 1.11. May need an older
+  Loom or Gradle pin.
+- `build_mod` / `install_mod` find the jar in `build/libs/` and copy it into the
+  instance. Confirm the Claude badge shows in the mod list.
+- `run_dev_client` (`gradle runClient`) reaches the title screen, and
+  `read_dev_log` returns its log.
+
+Quick end-to-end test through the MCP tools: create a Fabric 1.21.1 instance,
+`create_mod` with id `test_mod`, `install_mod`, `run_dev_client`. Repeat for
+NeoForge 1.21.1.
+
+When fixing a template, update both `templates.rs` and its unit tests. Projects
+that already exist keep their own Gradle files and just need editing.
+
+## 5. Microsoft sign-in
+
+`auth.rs` implements the device code flow → Xbox Live → XSTS → Minecraft. It
+needs the user's own Azure client ID, approved for the Minecraft API (see
+README). Once they have one: sign in, restart the launcher, and check the token
+refresh (`usable_account`) still works when the Minecraft token has expired.
+
+## 6. Polish ideas (not done)
+
+- Import mods from Modrinth/CurseForge.
+- Show the game's log level colours more faithfully; filter by source in the console.
+- Tray icon / minimise to tray while playing.
+- Code-signing the installer (Windows SmartScreen will warn otherwise).
+- Auto-updates via the Tauri updater plugin.
+- Tokens in `accounts.json` are stored in plain JSON; consider the Windows
+  Credential Manager (`keyring` crate).

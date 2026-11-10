@@ -1,0 +1,16 @@
+{
+  "name": "claude-launcher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A lightweight Minecraft launcher that Claude Code can build mods for",
+  "scripts": {
+    "setup": "npm install && npm install --prefix ui && npm install --prefix mcp",
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "test": "cargo test -p launcher-core && npm run typecheck --prefix ui && npm run build --prefix mcp"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}
