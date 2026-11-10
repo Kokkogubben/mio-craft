@@ -15,7 +15,9 @@ use crate::loaders::Loader;
 use crate::maven::cmp_versions;
 
 pub const GRADLE_8: &str = "8.14.3";
-pub const GRADLE_9: &str = "9.2.1";
+/// Loom for unobfuscated Minecraft is taken at its latest version, which raises
+/// its minimum Gradle over time (1.19 needs 9.8). Bump this when a build says so.
+pub const GRADLE_9: &str = "9.8.2";
 pub const FABRIC_LOOM_OBF: &str = "1.11-SNAPSHOT";
 pub const FABRIC_LOOM_UNOBF_FALLBACK: &str = "1.14-SNAPSHOT";
 pub const MODDEV_FALLBACK: &str = "2.0.107";
