@@ -133,7 +133,19 @@ guard are tested locally. Still to try: importing real packs from Modrinth
 (large ones, `client-overrides`, files with `env.client = "unsupported"`), and
 importing an exported pack into another launcher (Prism, Modrinth App).
 
-## 10. Polish ideas (not done)
+## 10. Crash helper and first-run setup
+
+- `crash.rs` detects a crash from a crash report written since the last launch,
+  or a non-zero exit code recorded by the exit watcher in `launch::launch`.
+  Tested with sample reports. On Windows, crash a game on purpose (e.g. a mod
+  that throws in its initializer) and check the banner, the suspects, and that
+  **Ask Claude to fix** opens Claude Code in that mod's project folder.
+- What exit code Minecraft uses on Windows after a crash hasn't been checked;
+  the crash-report path covers most crashes either way.
+- The first-run setup shows when `config.json` has no `"onboarded": true`, so
+  people upgrading from an earlier build see it once.
+
+## 11. Polish ideas (not done)
 
 - Mod detail pages (README/gallery) inside the browser.
 - Show the game's log level colours more faithfully; filter by source in the console.

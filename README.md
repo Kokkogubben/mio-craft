@@ -11,10 +11,12 @@ installs it. The mod then shows up in the launcher's mod list, tagged
 - **Mod updates**: check browser-installed mods for newer compatible versions and update one or all
 - **Make a mod with Claude**: describe a mod in the launcher and it opens Claude Code with your idea and the instance ready; "Ask Claude" does the same for changing an existing mod
 - **Modpacks**: import Modrinth `.mrpack` files (Fabric and NeoForge) and export instances to share, with Claude's mods included
+- **Crash helper**: when the game crashes, a banner shows what went wrong and which mods were involved, with **Ask Claude to fix**
+- **First-run setup** that walks through connecting Claude Code, sign-in and CurseForge
 - **Sign-in tokens in Windows Credential Manager**, not in a plain file
 - **Microsoft account sign-in**
 - **Java and Gradle downloaded automatically**, so you don't need to install anything to play or to build mods
-- **MCP server for Claude Code** with 23 tools: create instances and mods, build, install, run a test client, read logs and crash reports
+- **MCP server for Claude Code** with 24 tools: create instances and mods, build, install, run a test client, read logs and crash reports
 - Small: a Tauri app (Rust + a web UI), not Electron
 
 ## How it fits together
@@ -125,6 +127,7 @@ Microsoft requires every third-party launcher to use its own Azure app:
 | `install_mod` | Build and install into the instance (replaces older builds) |
 | `run_dev_client`, `stop_dev_client`, `read_dev_log` | Offline test client (`gradle runClient`) |
 | `launch_game`, `stop_game`, `read_game_log` | Play the real instance; read `latest.log`, raw output or the newest crash report |
+| `get_crash_info` | Summary of the latest crash and the mods in its stack trace |
 
 ## Version support
 
@@ -146,6 +149,15 @@ the core and the MCP server respect it).
 
 See [NOTES-FOR-CLAUDE-CODE.md](NOTES-FOR-CLAUDE-CODE.md) for what still needs
 checking on a real Windows machine.
+
+## Crashes
+
+If a game crashes (it writes a crash report, or exits with an error), the
+instance shows a banner with the crash description, the first exception and the
+installed mods that appear in the stack trace. **Ask Claude to fix** opens Claude
+Code with all of that. If one of Claude's own mods is involved, it opens in that
+mod's project and Claude fixes and reinstalls it. For third-party mods it explains
+the problem and asks before changing anything.
 
 ## Modpacks
 

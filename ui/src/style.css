@@ -1225,3 +1225,109 @@ textarea.input {
   background: var(--claude);
   color: #1d0f07;
 }
+
+/* ---------- first-run setup ---------- */
+
+.setup .dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-bottom: 18px;
+}
+
+.dot-step {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.dot-step.done {
+  background: var(--grass-dark);
+}
+
+.dot-step.on {
+  background: var(--grass);
+  width: 20px;
+  border-radius: 999px;
+}
+
+.setup-hero {
+  display: flex;
+  justify-content: center;
+  margin: 4px 0 8px;
+}
+
+.setup p.center {
+  margin: 0 auto 10px;
+  max-width: 400px;
+}
+
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checklist li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.checklist li > span:first-child {
+  width: 16px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.checklist li.ok > span:first-child {
+  color: var(--grass);
+}
+
+.steps {
+  padding-left: 20px;
+  color: var(--muted);
+  margin: 0 0 14px;
+}
+
+.steps li {
+  margin: 4px 0;
+}
+
+.steps em {
+  color: var(--text);
+  font-style: normal;
+}
+
+.setup-choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.choice:hover {
+  border-color: var(--grass-dark);
+}
+
+button.link.muted {
+  color: var(--muted);
+}

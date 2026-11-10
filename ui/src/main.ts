@@ -891,9 +891,9 @@ async function settingsModal() {
       <h3>Data folder</h3>
       <button class="path" data-action="open-path" data-path="${esc(status.data_dir)}">${esc(status.data_dir)}</button>
     </section>
-    <div class="modal-actions">
-      <button class="btn ghost" data-action="close-modal">Close</button>
-      <button class="btn primary" id="set-save">Save</button>
+    <div class="modal-actions spread">
+      <button class="btn ghost" data-action="run-setup">Run setup again</button>
+      <span><button class="btn ghost" data-action="close-modal">Close</button> <button class="btn primary" id="set-save">Save</button></span>
     </div>`);
   $("#set-save").addEventListener("click", async () => {
     try {
@@ -1034,6 +1034,117 @@ function askClaudeModal(p: Project) {
     if (!t.trim()) return toast("Describe what you want first", "err");
     closeModal();
     await openClaude({ project_id: p.id, request: t });
+  });
+}
+
+// ---------- first-run setup ----------
+
+const SETUP_STEPS = ["welcome", "claude", "account", "curseforge", "done"] as const;
+
+async function setupModal(step = 0) {
+  const name = SETUP_STEPS[step];
+  const dots = SETUP_STEPS.map((_, i) => `<span class="dot-step ${i === step ? "on" : i < step ? "done" : ""}"></span>`).join("");
+  const nav = (next: string, opts: { back?: boolean; skip?: boolean } = {}) => `
+    <div class="modal-actions spread">
+      <span>${opts.back !== false && step > 0 ? '<button class="btn ghost" data-setup="back">Back</button>' : '<button class="link muted" data-setup="skip-all">Skip setup</button>'}</span>
+      <span>${opts.skip ? '<button class="btn ghost" data-setup="next">Skip</button> ' : ""}<button class="btn primary" id="setup-next">${next}</button></span>
+    </div>`;
+  let body = "";
+  if (name === "welcome") {
+    body = `
+      <div class="setup-hero"><img src="/icon.png" alt="" width="64" height="64"/></div>
+      <h2 class="center">Welcome to Claude Launcher</h2>
+      <p class="center muted">Play Minecraft with Fabric or NeoForge, browse Modrinth and CurseForge, and have Claude Code build mods for you.</p>
+      <p class="center muted small">Setup takes about a minute. You can change everything later in Settings.</p>
+      ${nav("Get started", { back: false })}`;
+  } else if (name === "claude") {
+    const cc = await api<{ claude_path: string | null; node_path: string | null; connected: boolean }>("GET", "/claude-code").catch(() => null);
+    const row = (ok: boolean, label: string, fix: string) =>
+      `<li class="${ok ? "ok" : ""}"><span>${ok ? "✓" : "○"}</span> ${label}${ok ? "" : ` <span class="muted small">${fix}</span>`}</li>`;
+    body = `
+      <h2>✦ Connect Claude Code</h2>
+      <p class="muted">Claude Code writes, builds and installs mods through the launcher.</p>
+      <ul class="checklist">
+        ${row(!!cc?.claude_path, "Claude Code installed", `<button class="link" data-action="open-url" data-url="https://claude.com/claude-code">Get it</button>`)}
+        ${row(!!cc?.node_path, "Node.js installed", `<button class="link" data-action="open-url" data-url="https://nodejs.org/">Get Node.js LTS</button> (runs the launcher's tools)`)}
+        ${row(!!cc?.connected, "Connected to the launcher", cc?.claude_path && cc?.node_path ? `<button class="link" data-setup="connect">Connect now</button>` : "after installing the above")}
+      </ul>
+      <p class="muted small">Installed something just now? <button class="link" data-setup="refresh">Check again</button></p>
+      ${nav("Next", { skip: !cc?.connected })}`;
+  } else if (name === "account") {
+    const cfg = await api("GET", "/config");
+    body = `
+      <h2>Sign-in for playing</h2>
+      <p class="muted">You can test mods right away without an account. To <strong>play</strong> your instances, you'll sign in with a Microsoft account that owns Minecraft, which needs a free Azure app ID:</p>
+      <ol class="steps small">
+        <li>At <button class="link" data-action="open-url" data-url="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade">portal.azure.com → App registrations</button>, register an app for <em>personal Microsoft accounts only</em>.</li>
+        <li>Under <em>Authentication</em>, turn on <em>Allow public client flows</em>.</li>
+        <li>Paste its <em>Application (client) ID</em> below.</li>
+        <li>Submit the ID to Mojang for Minecraft API access (see the README). Sign-in works once it's approved.</li>
+      </ol>
+      <label class="field"><span>Azure client ID</span><input id="setup-cid" class="input mono" placeholder="00000000-0000-0000-0000-000000000000" value="${esc(cfg.ms_client_id ?? "")}"/></label>
+      ${nav("Next", { skip: true })}`;
+  } else if (name === "curseforge") {
+    const cfg = await api("GET", "/config");
+    body = `
+      <h2>CurseForge (optional)</h2>
+      <p class="muted">Modrinth works out of the box. To also browse CurseForge, add a free API key from <button class="link" data-action="open-url" data-url="https://console.curseforge.com/">console.curseforge.com</button>.</p>
+      <label class="field"><span>CurseForge API key</span><input id="setup-cf" type="password" class="input mono" placeholder="Not set" value="${esc(cfg.curseforge_api_key ?? "")}"/></label>
+      ${nav("Next", { skip: true })}`;
+  } else {
+    body = `
+      <h2>You're set</h2>
+      <p class="muted">Make an instance to play and build mods for, or import a modpack.</p>
+      <div class="setup-choices">
+        <button class="choice" data-setup="finish-new"><strong>New instance</strong><span class="muted small">Pick a Minecraft version and loader</span></button>
+        <button class="choice" data-setup="finish-import"><strong>Import a modpack</strong><span class="muted small">From a Modrinth .mrpack file</span></button>
+      </div>
+      ${nav("Finish")}`;
+  }
+  openModal(`<div class="setup"><div class="dots">${dots}</div>${body}</div>`);
+
+  const root = document.querySelector<HTMLElement>("#modal-root .modal")!;
+  const saveStep = async () => {
+    if (name === "account") await api("PATCH", "/config", { ms_client_id: $<HTMLInputElement>("#setup-cid").value });
+    if (name === "curseforge") await api("PATCH", "/config", { curseforge_api_key: $<HTMLInputElement>("#setup-cf").value });
+  };
+  const finish = async () => {
+    await api("PATCH", "/config", { onboarded: true });
+    await loadAccounts();
+    closeModal();
+  };
+  root.querySelector("#setup-next")?.addEventListener("click", async () => {
+    try {
+      await saveStep();
+      if (name === "done") await finish();
+      else setupModal(step + 1);
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  });
+  root.addEventListener("click", async (ev) => {
+    const el = (ev.target as HTMLElement).closest<HTMLElement>("[data-setup]");
+    if (!el) return;
+    const a = el.dataset.setup;
+    if (a === "back") setupModal(step - 1);
+    else if (a === "next") setupModal(step + 1);
+    else if (a === "refresh") setupModal(step);
+    else if (a === "skip-all") finish();
+    else if (a === "connect") {
+      try {
+        await api("POST", "/claude-code/connect", { mcp_path: await mcpServerPath() });
+        toast("Claude Code is connected");
+      } catch (e) {
+        toast((e as Error).message, "err");
+      }
+      setupModal(step);
+    } else if (a === "finish-new") {
+      await finish();
+      newInstanceModal();
+    } else if (a === "finish-import") {
+      await finish();
+      $<HTMLInputElement>("#pack-file").click();
+    }
   });
 }
 
@@ -1214,6 +1325,9 @@ document.addEventListener("click", async (ev) => {
       busy(`mod:${file}`, () => api("DELETE", `/instances/${enc(inst.id)}/mods/${enc(file)}`));
       break;
     }
+    case "run-setup":
+      setupModal(0);
+      break;
     case "crash-ask":
       if (inst) openClaude({ instance_id: inst.id, request: "", crash: true });
       break;
@@ -1330,6 +1444,8 @@ document.addEventListener("keydown", (ev) => {
     await connect();
     events(onEvent);
     await Promise.all([loadAccounts(), loadInstances()]);
+    const cfg = await api("GET", "/config");
+    if (!cfg.onboarded) setupModal(0);
   } catch (e) {
     $("#main").innerHTML = `<div class="empty"><h1>Couldn't start</h1><p>${esc((e as Error).message)}</p></div>`;
   }

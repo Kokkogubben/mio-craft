@@ -264,6 +264,31 @@ mod tests {
     }
 
     #[test]
+    fn crash_prompt_names_claude_mods() {
+        let c = crate::crash::CrashInfo {
+            instance_id: "creative-lab".into(),
+            at: 0,
+            exit_code: Some(-1),
+            report_path: Some("C:/r/crash.txt".into()),
+            description: Some("Initializing game".into()),
+            exception: Some("java.lang.NullPointerException: x".into()),
+            game_log: "C:/g/latest.log".into(),
+            launcher_log: "C:/l/out.log".into(),
+            suspects: vec![crate::crash::Suspect {
+                mod_id: "glow".into(),
+                name: "Glow".into(),
+                file_name: "glow.jar".into(),
+                claude_project: Some("glow".into()),
+            }],
+        };
+        let p = crash_prompt(&inst(), &c);
+        assert!(p.contains("Initializing game (java.lang.NullPointerException: x)"));
+        assert!(p.contains("made by you: mod project glow"));
+        assert!(p.contains("ask me before changing third-party mods"));
+        assert!(p.contains("C:/r/crash.txt"));
+    }
+
+    #[test]
     fn quoting() {
         assert_eq!(ps_quote("it's"), "'it''s'");
         assert_eq!(ps_quote("say \"hi\"\nnow"), "'say ''hi'' now'");

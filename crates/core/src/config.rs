@@ -15,6 +15,8 @@ pub struct Config {
     pub extra_jvm_args: Vec<String>,
     /// CurseForge API key (from console.curseforge.com). Modrinth needs none.
     pub curseforge_api_key: Option<String>,
+    /// The first-run setup has been finished or skipped.
+    pub onboarded: bool,
 }
 
 impl Default for Config {
@@ -25,6 +27,7 @@ impl Default for Config {
             selected_account: None,
             extra_jvm_args: vec![],
             curseforge_api_key: None,
+            onboarded: false,
         }
     }
 }
@@ -50,6 +53,7 @@ pub struct ConfigPatch {
     pub selected_account: Option<String>,
     pub extra_jvm_args: Option<Vec<String>>,
     pub curseforge_api_key: Option<String>,
+    pub onboarded: Option<bool>,
 }
 
 impl Config {
@@ -70,6 +74,9 @@ impl Config {
         if let Some(v) = p.curseforge_api_key {
             let v = v.trim().to_string();
             self.curseforge_api_key = if v.is_empty() { None } else { Some(v) };
+        }
+        if let Some(v) = p.onboarded {
+            self.onboarded = v;
         }
     }
 }
