@@ -3,6 +3,7 @@ name = "launcher-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "Core of MioCraft: Minecraft installs, launching, mod projects and the local control API"
 
 [lib]

@@ -28,6 +28,8 @@ jobs:
   windows:
     needs: test
     runs-on: windows-latest
+    permissions:
+      contents: write # attach the installer to a release on tags
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

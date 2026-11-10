@@ -6,6 +6,7 @@ members = ["crates/core", "src-tauri"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/Kokkogubben/mio-craft"
 
 [profile.release]
 opt-level = "s"

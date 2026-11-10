@@ -277,8 +277,8 @@ pub async fn ensure_built(l: &Launcher, inst: &Instance) -> Result<PathBuf> {
         _ => {
             let errors: Vec<String> = lines.iter().filter(|x| crate::projects::is_error_line(x)).take(30).cloned().collect();
             bail!(
-                "Couldn't build the Claude Live companion mod. Its source is in {} (written for Minecraft 26.x; \
-                 see NOTES-FOR-CLAUDE-CODE.md). Errors:\n{}",
+                "Couldn't build the Claude Live companion mod. Its source is in {} (written for Minecraft 26.x). \
+                 Errors:\n{}",
                 src.display(),
                 errors.join("\n")
             )

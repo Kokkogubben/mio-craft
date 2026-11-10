@@ -10,5 +10,4 @@ Minecraft launcher (Tauri 2 + TypeScript) with an MCP server so Claude Code can 
 - `crates/core/live/` — Java for live mode: the hotswap agent and the companion mod (Fabric 26.x),
   embedded into the launcher and built on demand. Calls marked `VERIFY(26.x)` were never compiled.
 
-Start with NOTES-FOR-CLAUDE-CODE.md: it lists what was never run on Windows and needs verifying.
 Keep logic in the core, not in the UI or the shell, so the UI and the MCP server stay in sync.

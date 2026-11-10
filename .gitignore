@@ -3,3 +3,4 @@ node_modules/
 dist/
 *.log
 src-tauri/gen/
+NOTES-FOR-CLAUDE-CODE.md

@@ -2,6 +2,11 @@
   "name": "mio-craft-ui",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kokkogubben/mio-craft.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

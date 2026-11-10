@@ -4,7 +4,7 @@
 //! Build tool versions are picked per Minecraft "era". They are a best
 //! starting point: if a build fails because a version moved on, Claude Code
 //! can read the build output (via the MCP `build_mod` tool) and fix the
-//! Gradle files directly. See NOTES-FOR-CLAUDE-CODE.md.
+//! Gradle files directly.
 
 use std::collections::BTreeMap;
 

@@ -3,6 +3,7 @@ name = "mio-craft"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
 description = "A lightweight Minecraft launcher that Claude Code can build mods for"
 
 [lib]

@@ -2,9 +2,16 @@
   "name": "mio-craft-mcp",
   "version": "0.1.0",
   "description": "MCP server that lets Claude Code create, build and install Minecraft mods through MioCraft",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kokkogubben/mio-craft.git"
+  },
   "type": "module",
   "private": true,
-  "bin": { "mio-craft-mcp": "dist/mio-craft-mcp.mjs" },
+  "bin": {
+    "mio-craft-mcp": "dist/mio-craft-mcp.mjs"
+  },
   "scripts": {
     "build": "tsc --noEmit && esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist/mio-craft-mcp.mjs --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
     "typecheck": "tsc --noEmit",

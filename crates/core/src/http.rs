@@ -11,7 +11,12 @@ use tokio::io::AsyncWriteExt;
 
 use crate::Launcher;
 
-pub const USER_AGENT: &str = concat!("MioCraft/", env!("CARGO_PKG_VERSION"));
+/// Identifies the app and where to reach its maintainer, as Modrinth asks.
+pub const USER_AGENT: &str = concat!(
+    "MioCraft/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/Kokkogubben/mio-craft)"
+);
 
 pub fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()

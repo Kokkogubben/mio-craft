@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "description": "A lightweight Minecraft launcher that Claude Code can build mods for",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Kokkogubben/mio-craft.git"
+  },
   "scripts": {
     "setup": "npm install && npm install --prefix ui && npm install --prefix mcp",
     "tauri": "tauri",
