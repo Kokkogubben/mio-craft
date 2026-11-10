@@ -7,9 +7,10 @@ installs it. The mod then shows up in the launcher's mod list, tagged
 
 - **Instances** for any Minecraft version, with **Fabric** or **NeoForge** (or vanilla)
 - **Mod list** per instance: enable/disable, delete, search, and a *Rebuild* button for Claude-made mods
+- **Mod browser** for **Modrinth** and **CurseForge**: results are filtered to the instance's Minecraft version and loader, and required dependencies install automatically
 - **Microsoft account sign-in**
 - **Java and Gradle downloaded automatically**, so you don't need to install anything to play or to build mods
-- **MCP server for Claude Code** with 18 tools: create instances and mods, build, install, run a test client, read logs and crash reports
+- **MCP server for Claude Code** with 20 tools: create instances and mods, build, install, run a test client, read logs and crash reports
 - Small: a Tauri app (Rust + a web UI), not Electron
 
 ## How it fits together
@@ -32,6 +33,7 @@ Data lives in `%APPDATA%\ClaudeLauncher`:
 ```
 instances/<id>/minecraft/      game folder (mods/, saves/, logs/ …)
 instances/<id>/claude-mods.json which jars in mods/ Claude built
+instances/<id>/online-mods.json which jars came from Modrinth / CurseForge
 projects/<mod_id>/             mod source code Claude Code edits (has its own CLAUDE.md)
 versions/ libraries/ assets/   shared Minecraft files
 java/ gradle/                  downloaded JDKs and Gradle
@@ -71,7 +73,15 @@ Claude Code creates the project, edits the code, runs `build_mod` until it
 compiles, installs it with `install_mod`, and can test it in an offline dev client
 with `run_dev_client`.
 
-### 3. Microsoft sign-in (needed to play)
+### 3. CurseForge (optional)
+
+Modrinth works out of the box. To browse CurseForge too, get a free API key at
+[console.curseforge.com](https://console.curseforge.com/) and paste it into
+**Settings → CurseForge API key**. Some CurseForge authors don't allow downloads
+from other apps; for those, the launcher shows a link to the mod's page so you
+can download it yourself and drop it in the mods folder.
+
+### 4. Microsoft sign-in (needed to play)
 
 Testing mods in the dev client needs no account. To **play** an instance you
 need to sign in with a Microsoft account that owns Minecraft: Java Edition.
@@ -95,6 +105,7 @@ Microsoft requires every third-party launcher to use its own Azure app:
 | `list_instances`, `create_instance` | See or make instances (downloads Minecraft, the loader and Java) |
 | `list_minecraft_versions`, `list_loader_versions` | Available versions |
 | `list_mods`, `set_mod_enabled` | An instance's mod list |
+| `search_online_mods`, `install_online_mod` | Find and install Modrinth / CurseForge mods (with required dependencies) |
 | `list_mod_projects`, `get_mod_project`, `create_mod` | Mod projects from version-matched templates |
 | `build_mod` | Compile with Gradle; returns compiler errors |
 | `install_mod` | Build and install into the instance (replaces older builds) |

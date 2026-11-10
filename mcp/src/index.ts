@@ -16,6 +16,7 @@ const server = new McpServer(
       "Typical flow: list_instances (or create_instance) → create_mod → edit the files in the returned path",
       "(read its CLAUDE.md first) → build_mod and fix any errors → install_mod so it appears in the launcher's",
       "mod list → run_dev_client to test offline, read_dev_log to check output → stop_dev_client.",
+      "To add third-party mods or libraries use search_online_mods then install_online_mod.",
       "Use launch_game only when the user wants to play their real instance; read_game_log with kind 'crash' after a crash.",
       "Don't run Gradle directly: these tools use the launcher's bundled Java and Gradle.",
     ].join(" "),
@@ -157,6 +158,59 @@ server.registerTool(
   },
   async ({ instance_id, file_name, enabled }) =>
     run(() => call("POST", `/instances/${enc(instance_id)}/mods/${enc(file_name)}/enabled`, { enabled })),
+);
+
+server.registerTool(
+  "search_online_mods",
+  {
+    description:
+      "Search Modrinth or CurseForge for third-party mods that work with an instance's Minecraft version and loader. CurseForge only works if the user has added an API key in Settings.",
+    inputSchema: {
+      instance_id: z.string(),
+      query: z.string().describe("Search text; empty lists popular mods"),
+      source: z.enum(["modrinth", "curseforge"]).optional().describe("Default modrinth"),
+      sort: z.enum(["relevance", "downloads", "updated", "newest"]).optional(),
+      limit: z.number().int().positive().max(50).optional(),
+    },
+  },
+  async ({ instance_id, query, source, sort, limit }) =>
+    run(async () => {
+      const src = source ?? "modrinth";
+      const r = await call<{ hits: Json[]; total: number }>(
+        "GET",
+        `/browse/${src}/search?instance_id=${enc(instance_id)}&q=${enc(query)}&sort=${sort ?? "relevance"}&limit=${limit ?? 10}`,
+      );
+      return {
+        total: r.total,
+        results: r.hits.map((h) => ({
+          project_id: h.project_id,
+          title: h.title,
+          author: h.author,
+          downloads: h.downloads,
+          description: h.description,
+          installed: h.installed,
+          page: h.page_url,
+        })),
+      };
+    }),
+);
+
+server.registerTool(
+  "install_online_mod",
+  {
+    description:
+      "Install a third-party mod from Modrinth or CurseForge into an instance (newest compatible version unless version_id is given), along with its required dependencies. Use project_id from search_online_mods. Only install mods the user asked for or that a mod you're building needs.",
+    inputSchema: {
+      instance_id: z.string(),
+      project_id: z.string(),
+      source: z.enum(["modrinth", "curseforge"]).optional().describe("Default modrinth"),
+      version_id: z.string().optional(),
+    },
+  },
+  async ({ instance_id, project_id, source, version_id }) =>
+    run(() =>
+      call("POST", `/instances/${enc(instance_id)}/online-mods`, { source: source ?? "modrinth", project_id, version_id }),
+    ),
 );
 
 // ---------- mod projects ----------

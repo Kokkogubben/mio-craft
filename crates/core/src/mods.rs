@@ -23,6 +23,8 @@ pub struct ModEntry {
     pub size: u64,
     /// Set when the jar was built by Claude from a mod project in this launcher.
     pub claude_project: Option<String>,
+    /// Set when the jar came from the built-in browser (Modrinth / CurseForge).
+    pub online: Option<crate::browse::OnlineMod>,
 }
 
 /// `instances/<id>/claude-mods.json`: installed jar file name → project id.
@@ -52,6 +54,7 @@ pub async fn list(l: &Launcher, instance_id: &str) -> Result<Vec<ModEntry>> {
     let dir = l.paths.mods_dir(instance_id);
     tokio::fs::create_dir_all(&dir).await?;
     let tags = load_tags(l, instance_id).await;
+    let online = crate::browse::prune_tags(l, instance_id).await;
     let mut out = vec![];
     let mut rd = tokio::fs::read_dir(&dir).await?;
     while let Some(e) = rd.next_entry().await? {
@@ -69,6 +72,7 @@ pub async fn list(l: &Launcher, instance_id: &str) -> Result<Vec<ModEntry>> {
             .unwrap_or_default();
         out.push(ModEntry {
             claude_project: tags.files.get(base_name(&file_name)).cloned(),
+            online: online.get(base_name(&file_name)).cloned(),
             file_name,
             enabled,
             mod_id: meta.mod_id,

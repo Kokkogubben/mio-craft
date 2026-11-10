@@ -85,9 +85,28 @@ needs the user's own Azure client ID, approved for the Minecraft API (see
 README). Once they have one: sign in, restart the launcher, and check the token
 refresh (`usable_account`) still works when the Minecraft token has expired.
 
-## 6. Polish ideas (not done)
+## 6. Mod browser (Modrinth / CurseForge)
 
-- Import mods from Modrinth/CurseForge.
+`crates/core/src/browse.rs`. The parsers are unit-tested against sample JSON in
+the shape of each API, and a full install (main mod + required dependency,
+checksum check, tags) is tested against a fake local Modrinth server. Against
+the real APIs, check:
+- **Modrinth**: search facets (`categories:fabric|neoforge`, `versions:<mc>`)
+  return sensible results; the versions endpoint filters by loader and game
+  version. Modrinth asks for a User-Agent that identifies the app with contact
+  info. It's currently `ClaudeLauncher/<version>` in `http.rs`; add a GitHub URL
+  or email.
+- **CurseForge** (needs the user's API key): the `modLoaderType` values
+  (Fabric = 4, NeoForge = 6), `sortField` values, and that files with
+  `downloadUrl: null` show "Manual download" in the UI instead of failing.
+- Dependency detection: a dependency already installed by hand counts as present
+  when its jar's mod id matches the project slug (with `-` → `_`). This is a
+  heuristic and may reinstall libraries whose slug differs from their mod id.
+
+## 7. Polish ideas (not done)
+
+- Update checker for browser-installed mods (compare `online-mods.json` versions with the newest compatible version).
+- Mod detail pages (README/gallery) inside the browser.
 - Show the game's log level colours more faithfully; filter by source in the console.
 - Tray icon / minimise to tray while playing.
 - Code-signing the installer (Windows SmartScreen will warn otherwise).

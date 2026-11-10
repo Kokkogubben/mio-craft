@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, config, instances, launch, loaders, mods, mojang, process, projects, Launcher};
+use crate::{auth, browse, config, instances, launch, loaders, mods, mojang, process, projects, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -92,6 +92,9 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}/mods", get(list_mods))
         .route("/instances/{id}/mods/{file}", delete(delete_mod))
         .route("/instances/{id}/mods/{file}/enabled", post(set_mod_enabled))
+        .route("/instances/{id}/online-mods", post(install_online))
+        .route("/browse/{source}/search", get(browse_search))
+        .route("/browse/{source}/projects/{pid}/versions", get(browse_versions))
         .route("/projects", get(list_projects).post(create_project))
         .route("/projects/{id}", get(get_project))
         .route("/projects/{id}/build", post(build_project))
@@ -140,6 +143,7 @@ async fn status(State(s): State<AppState>) -> R<Value> {
         "running": s.l.processes.running().await,
         "signed_in": !auth::load_accounts(&s.l).await.is_empty(),
         "has_client_id": s.l.config.read().await.ms_client_id.is_some(),
+        "has_curseforge_key": s.l.config.read().await.curseforge_api_key.is_some(),
     })))
 }
 
@@ -315,6 +319,50 @@ async fn delete_mod(State(s): State<AppState>, Path((id, file)): Path<(String, S
     instances::get(&s.l, &id).await?;
     mods::delete(&s.l, &id, &file).await?;
     Ok(ok())
+}
+
+#[derive(Deserialize)]
+struct BrowseQuery {
+    instance_id: String,
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    sort: browse::Sort,
+    #[serde(default)]
+    offset: u64,
+    #[serde(default = "default_page")]
+    limit: u64,
+}
+fn default_page() -> u64 {
+    20
+}
+
+async fn browse_search(State(s): State<AppState>, Path(source): Path<String>, Query(q): Query<BrowseQuery>) -> R<browse::SearchPage> {
+    let source = browse::Source::parse(&source)?;
+    let inst = instances::get(&s.l, &q.instance_id).await?;
+    let mut page = browse::search(&s.l, source, &inst, &q.q, q.sort, q.offset, q.limit).await?;
+    let tags = browse::prune_tags(&s.l, &inst.id).await;
+    let installed: std::collections::HashSet<_> =
+        tags.values().filter(|t| t.source == source).map(|t| t.project_id.clone()).collect();
+    for h in &mut page.hits {
+        h.installed = installed.contains(&h.project_id);
+    }
+    Ok(Json(page))
+}
+
+#[derive(Deserialize)]
+struct VersionsQ {
+    instance_id: String,
+}
+
+async fn browse_versions(State(s): State<AppState>, Path((source, pid)): Path<(String, String)>, Query(q): Query<VersionsQ>) -> R<Vec<browse::ModVersion>> {
+    let source = browse::Source::parse(&source)?;
+    let inst = instances::get(&s.l, &q.instance_id).await?;
+    Ok(Json(browse::versions(&s.l, source, &pid, &inst).await?))
+}
+
+async fn install_online(State(s): State<AppState>, Path(id): Path<String>, Json(req): Json<browse::InstallRequest>) -> R<browse::InstallReport> {
+    Ok(Json(browse::install(&s.l, &id, req).await?))
 }
 
 async fn list_projects(State(s): State<AppState>) -> R<Vec<projects::ModProject>> {

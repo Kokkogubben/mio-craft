@@ -973,3 +973,136 @@ select.input {
     padding-right: 22px;
   }
 }
+
+/* ---------- browse ---------- */
+
+.toolbar.wrap {
+  flex-wrap: wrap;
+}
+
+.toolbar .input.sort {
+  width: auto;
+  max-width: 180px;
+}
+
+#browse-q {
+  flex: 1;
+  max-width: none;
+  min-width: 220px;
+}
+
+.small-seg {
+  flex: none;
+}
+
+.small-seg button {
+  padding: 6px 14px;
+}
+
+.hit {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--surface);
+}
+
+.hit + .hit {
+  border-top: 1px solid var(--border);
+}
+
+.hit-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 9px;
+  flex: none;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+.hit-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tag {
+  background: var(--surface-2);
+  padding: 0 7px;
+  border-radius: 999px;
+  text-transform: capitalize;
+}
+
+.linkish {
+  border: 0;
+  background: none;
+  padding: 0;
+  text-align: left;
+}
+
+.linkish:hover {
+  text-decoration: underline;
+}
+
+button.badge {
+  border: 0;
+  cursor: pointer;
+}
+
+.badge.src.modrinth {
+  background: rgba(27, 217, 106, 0.12);
+  color: #3ddc84;
+}
+
+.badge.src.curseforge {
+  background: rgba(241, 100, 54, 0.12);
+  color: #f47c52;
+}
+
+.note.err {
+  border-color: rgba(229, 83, 75, 0.35);
+  color: #ff9a92;
+}
+
+.more {
+  align-self: center;
+}
+
+.versions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.ver-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+/* Children of the scrolling tab body keep their natural height. */
+.tab-body > * {
+  flex-shrink: 0;
+}
+
+.tab-body > .console {
+  flex-shrink: 1;
+}
+
+.badge {
+  white-space: nowrap;
+  line-height: 1.6;
+}
+
+button.badge {
+  font: 550 11.5px/1.6 inherit;
+  font-family: inherit;
+}

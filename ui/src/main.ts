@@ -26,6 +26,33 @@ interface ModEntry {
   loader: string;
   size: number;
   claude_project: string | null;
+  online: { source: Source; project_id: string; title: string; page_url: string; as_dependency: boolean } | null;
+}
+
+type Source = "modrinth" | "curseforge";
+
+interface Hit {
+  source: Source;
+  project_id: string;
+  slug: string;
+  title: string;
+  description: string;
+  author: string;
+  downloads: number;
+  icon_url: string | null;
+  page_url: string;
+  categories: string[];
+  installed: boolean;
+}
+
+interface ModVersion {
+  version_id: string;
+  name: string;
+  version_number: string;
+  date: string;
+  channel: string;
+  file: { url: string | null; filename: string; size: number };
+  dependencies: { project_id: string; required: boolean }[];
 }
 
 interface Project {
@@ -45,7 +72,7 @@ interface Account {
   selected: boolean;
 }
 
-type Tab = "mods" | "projects" | "console";
+type Tab = "mods" | "browse" | "projects" | "console";
 
 // ---------- state ----------
 
@@ -57,6 +84,17 @@ const S = {
   projects: [] as Project[],
   accounts: [] as Account[],
   hasClientId: false,
+  hasCfKey: false,
+  browse: {
+    instance: null as string | null,
+    source: "modrinth" as Source,
+    q: "",
+    sort: "relevance",
+    hits: [] as Hit[],
+    total: 0,
+    loading: false,
+    error: "",
+  },
   running: new Set<string>(),
   busy: new Set<string>(),
   modFilter: "",
@@ -145,6 +183,7 @@ async function loadAccounts() {
   const [accounts, status] = await Promise.all([api<Account[]>("GET", "/accounts"), api("GET", "/status")]);
   S.accounts = accounts;
   S.hasClientId = status.has_client_id;
+  S.hasCfKey = status.has_curseforge_key;
   (status.running as string[]).forEach((r) => S.running.add(r));
   renderSidebar();
 }
@@ -216,24 +255,34 @@ function renderMain() {
       </div>
     </header>
     <div class="tabs" role="tablist">
-      ${(["mods", "projects", "console"] as Tab[])
+      ${(["mods", "browse", "projects", "console"] as Tab[])
         .map((t) => {
-          const label = t === "mods" ? `Mods <span class="count">${S.mods.length}</span>` : t === "projects" ? `Claude projects <span class="count">${projectsFor(inst).length}</span>` : "Console";
+          const label =
+            t === "mods" ? `Mods <span class="count">${S.mods.length}</span>`
+            : t === "browse" ? "Browse"
+            : t === "projects" ? `Claude projects <span class="count">${projectsFor(inst).length}</span>`
+            : "Console";
           return `<button role="tab" class="tab ${S.tab === t ? "active" : ""}" data-action="tab" data-tab="${t}">${label}</button>`;
         })
         .join("")}
     </div>
-    <section class="tab-body">${S.tab === "mods" ? modsTab(inst) : S.tab === "projects" ? projectsTab(inst) : consoleTab(inst)}</section>`;
+    <section class="tab-body">${S.tab === "mods" ? modsTab(inst) : S.tab === "browse" ? browseTab(inst) : S.tab === "projects" ? projectsTab(inst) : consoleTab(inst)}</section>`;
+  if (S.tab === "browse" && S.browse.instance !== inst.id && !S.browse.loading) runSearch(false);
   if (S.tab === "console") {
     const c = $("#console");
     c.scrollTop = c.scrollHeight;
   }
-  const filter = document.querySelector<HTMLInputElement>("#mod-filter");
-  if (filter && document.activeElement?.id !== "mod-filter" && S.modFilter) {
-    filter.focus();
-    filter.setSelectionRange(filter.value.length, filter.value.length);
+  for (const [id, val] of [["mod-filter", S.modFilter], ["browse-q", S.browse.q]] as const) {
+    const el = document.querySelector<HTMLInputElement>(`#${id}`);
+    if (el && val && refocus === id) {
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
   }
+  refocus = null;
 }
+
+let refocus: string | null = null;
 
 function projectsFor(inst: Instance) {
   return S.projects.filter((p) => p.instance_id === inst.id);
@@ -262,6 +311,7 @@ function modsTab(inst: Instance): string {
             <span class="mod-name">${esc(m.name ?? m.mod_id ?? m.file_name)}</span>
             ${m.version ? `<span class="mod-ver">${esc(m.version)}</span>` : ""}
             ${proj ? `<span class="badge claude" title="Built by Claude from project ${esc(proj)}">✦ Made by Claude</span>` : ""}
+            ${m.online ? `<button class="badge src ${m.online.source}" data-action="open-url" data-url="${esc(m.online.page_url)}" title="Open on ${sourceLabel(m.online.source)}">${sourceLabel(m.online.source)}${m.online.as_dependency ? " · dependency" : ""}</button>` : ""}
           </div>
           ${m.description ? `<div class="mod-desc">${esc(m.description)}</div>` : ""}
           <div class="mod-file">${esc(m.file_name)} · ${fmtSize(m.size)}</div>
@@ -286,6 +336,172 @@ function modsTab(inst: Instance): string {
         ? `<div class="mod-list">${rows || '<p class="muted pad">No mods match.</p>'}</div>`
         : `<div class="note">No mods yet. Drop .jar files into the mods folder, or ask Claude Code to make one, for example: <code>Make a ${loaderLabel(inst.loader)} mod for my "${esc(inst.name)}" instance that makes ores glow</code></div>`
     }`;
+}
+
+function sourceLabel(s: Source): string {
+  return s === "modrinth" ? "Modrinth" : "CurseForge";
+}
+
+function fmtCount(n: number): string {
+  if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(n >= 1e4 ? 0 : 1)}k`;
+  return String(n);
+}
+
+function browseTab(inst: Instance): string {
+  if (inst.loader === "vanilla") {
+    return `<div class="note">Vanilla instances can't load mods. Create a Fabric or NeoForge instance to browse mods.</div>`;
+  }
+  const B = S.browse;
+  const needsKey = B.source === "curseforge" && !S.hasCfKey;
+  const results = B.hits
+    .map((h) => {
+      const key = `get:${h.source}:${h.project_id}`;
+      const working = S.busy.has(key);
+      return `
+      <div class="hit">
+        ${h.icon_url ? `<img class="hit-icon" src="${esc(h.icon_url)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'hit-icon blank'}))"/>` : '<div class="hit-icon blank"></div>'}
+        <div class="mod-text">
+          <div class="mod-title">
+            <button class="mod-name linkish" data-action="open-url" data-url="${esc(h.page_url)}" title="Open on ${sourceLabel(h.source)}">${esc(h.title)}</button>
+            <span class="muted small">by ${esc(h.author)}</span>
+          </div>
+          <div class="mod-desc">${esc(h.description)}</div>
+          <div class="hit-meta">
+            <span>↓ ${fmtCount(h.downloads)}</span>
+            ${h.categories.slice(0, 3).map((c) => `<span class="tag">${esc(c)}</span>`).join("")}
+          </div>
+        </div>
+        <div class="mod-actions">
+          <button class="btn small ghost" data-action="browse-versions" data-pid="${esc(h.project_id)}" data-title="${esc(h.title)}">Versions</button>
+          ${
+            h.installed
+              ? '<span class="badge ok">Installed</span>'
+              : `<button class="btn small primary" data-action="browse-install" data-pid="${esc(h.project_id)}" ${working ? "disabled" : ""}>${working ? "Installing…" : "Install"}</button>`
+          }
+        </div>
+      </div>`;
+    })
+    .join("");
+  return `
+    <div class="toolbar wrap">
+      <div class="seg small-seg">
+        <button data-action="browse-source" data-v="modrinth" class="${B.source === "modrinth" ? "on" : ""}">Modrinth</button>
+        <button data-action="browse-source" data-v="curseforge" class="${B.source === "curseforge" ? "on" : ""}">CurseForge</button>
+      </div>
+      <input id="browse-q" class="input" placeholder="Search ${sourceLabel(B.source)} mods for ${esc(inst.mc_version)} ${loaderLabel(inst.loader)}" value="${esc(B.q)}" data-action="browse-q" ${needsKey ? "disabled" : ""}/>
+      <select id="browse-sort" class="input sort" data-action="browse-sort" ${needsKey ? "disabled" : ""}>
+        ${[["relevance", "Relevance"], ["downloads", "Downloads"], ["updated", "Recently updated"], ["newest", "Newest"]]
+          .map(([v, l]) => `<option value="${v}" ${B.sort === v ? "selected" : ""}>${l}</option>`)
+          .join("")}
+      </select>
+    </div>
+    ${
+      needsKey
+        ? `<div class="note">CurseForge needs a free API key. Get one at <button class="link" data-action="open-url" data-url="https://console.curseforge.com/">console.curseforge.com</button>, then add it in <button class="link" data-action="settings">Settings</button>.</div>`
+        : B.error
+          ? `<div class="note err">${esc(B.error)}</div>`
+          : B.hits.length
+            ? `<p class="muted small">Showing mods for Minecraft ${esc(inst.mc_version)} with ${loaderLabel(inst.loader)}. Required dependencies install automatically.</p>
+               <div class="mod-list">${results}</div>
+               ${B.hits.length < B.total ? `<button class="btn ghost more" data-action="browse-more" ${B.loading ? "disabled" : ""}>${B.loading ? "Loading…" : "Load more"}</button>` : ""}`
+            : `<p class="muted pad">${B.loading ? "Searching…" : "No mods found."}</p>`
+    }`;
+}
+
+let searchSeq = 0;
+async function runSearch(more: boolean) {
+  const inst = current();
+  if (!inst || inst.loader === "vanilla") return;
+  const B = S.browse;
+  if (B.source === "curseforge" && !S.hasCfKey) {
+    B.instance = inst.id;
+    B.hits = [];
+    renderMain();
+    return;
+  }
+  const seq = ++searchSeq;
+  B.loading = true;
+  B.error = "";
+  if (!more) B.instance = inst.id;
+  renderMain();
+  try {
+    const page = await api<{ hits: Hit[]; total: number }>(
+      "GET",
+      `/browse/${B.source}/search?instance_id=${enc(inst.id)}&q=${enc(B.q)}&sort=${B.sort}&offset=${more ? B.hits.length : 0}&limit=20`,
+    );
+    if (seq !== searchSeq) return;
+    B.hits = more ? [...B.hits, ...page.hits] : page.hits;
+    B.total = page.total;
+  } catch (e) {
+    if (seq !== searchSeq) return;
+    B.error = (e as Error).message;
+    if (!more) B.hits = [];
+  } finally {
+    if (seq === searchSeq) {
+      B.loading = false;
+      renderMain();
+    }
+  }
+}
+
+async function installOnline(pid: string, versionId?: string) {
+  const inst = current();
+  if (!inst) return;
+  const source = S.browse.source;
+  await busy(`get:${source}:${pid}`, async () => {
+    const r = await api<{ installed: string[]; already_installed: string[]; warnings: string[] }>(
+      "POST",
+      `/instances/${enc(inst.id)}/online-mods`,
+      { source, project_id: pid, version_id: versionId },
+    );
+    const hit = S.browse.hits.find((h) => h.project_id === pid);
+    if (hit) hit.installed = true;
+    const deps = r.installed.length - 1;
+    if (r.installed.length) toast(`Installed ${hit?.title ?? r.installed[0]}${deps > 0 ? ` and ${deps} dependenc${deps === 1 ? "y" : "ies"}` : ""}`);
+    else toast(`${hit?.title ?? "That mod"} is already installed`);
+    r.warnings.forEach((w) => toast(w, "err"));
+  });
+}
+
+async function versionsModal(pid: string, title: string) {
+  const inst = current();
+  if (!inst) return;
+  const source = S.browse.source;
+  openModal(`<h2>${esc(title)}</h2><p class="muted">Loading versions…</p>`);
+  try {
+    const vs = await api<ModVersion[]>("GET", `/browse/${source}/projects/${enc(pid)}/versions?instance_id=${enc(inst.id)}`);
+    openModal(`
+      <h2>${esc(title)}</h2>
+      <p class="muted small">Versions for Minecraft ${esc(inst.mc_version)} with ${loaderLabel(inst.loader)}</p>
+      <div class="versions">
+        ${
+          vs.length
+            ? vs
+                .slice(0, 40)
+                .map(
+                  (v) => `
+          <div class="ver-row">
+            <div class="grow">
+              <div><strong>${esc(v.version_number || v.name)}</strong> ${v.channel !== "release" ? `<span class="badge live">${esc(v.channel)}</span>` : ""}</div>
+              <div class="mod-file">${esc(v.file.filename)} · ${v.date ? esc(v.date.slice(0, 10)) : ""}${v.dependencies.some((d) => d.required) ? ` · ${v.dependencies.filter((d) => d.required).length} required dependenc${v.dependencies.filter((d) => d.required).length === 1 ? "y" : "ies"}` : ""}</div>
+            </div>
+            ${
+              v.file.url
+                ? `<button class="btn small" data-action="install-version" data-pid="${esc(pid)}" data-vid="${esc(v.version_id)}">Install</button>`
+                : `<span class="muted small" title="The author only allows downloads from CurseForge">Manual download</span>`
+            }
+          </div>`,
+                )
+                .join("")
+            : '<p class="muted">No versions for this instance.</p>'
+        }
+      </div>
+      <div class="modal-actions"><button class="btn ghost" data-action="close-modal">Close</button></div>`);
+  } catch (e) {
+    closeModal();
+    toast((e as Error).message, "err");
+  }
 }
 
 function projectsTab(inst: Instance): string {
@@ -555,6 +771,11 @@ async function settingsModal() {
       <label class="field"><span>Azure client ID</span><input id="set-cid" class="input mono" placeholder="00000000-0000-0000-0000-000000000000" value="${esc(cfg.ms_client_id ?? "")}"/></label>
     </section>
     <section class="settings-sec">
+      <h3>Mod browser</h3>
+      <p class="muted small">Modrinth works out of the box. CurseForge needs a free API key from <button class="link" data-action="open-url" data-url="https://console.curseforge.com/">console.curseforge.com</button>.</p>
+      <label class="field"><span>CurseForge API key</span><input id="set-cf" type="password" class="input mono" placeholder="Not set" value="${esc(cfg.curseforge_api_key ?? "")}"/></label>
+    </section>
+    <section class="settings-sec">
       <h3>Game</h3>
       <label class="field"><span>Default memory (MB)</span><input id="set-ram" type="number" min="1024" step="512" class="input" value="${esc(cfg.default_ram_mb)}"/></label>
       <label class="field"><span>Extra Java arguments</span><input id="set-jvm" class="input mono" placeholder="-XX:+UseG1GC" value="${esc((cfg.extra_jvm_args ?? []).join(" "))}"/></label>
@@ -573,9 +794,12 @@ async function settingsModal() {
         ms_client_id: $<HTMLInputElement>("#set-cid").value,
         default_ram_mb: Number($<HTMLInputElement>("#set-ram").value) || 4096,
         extra_jvm_args: $<HTMLInputElement>("#set-jvm").value.split(/\s+/).filter(Boolean),
+        curseforge_api_key: $<HTMLInputElement>("#set-cf").value,
       });
       closeModal();
       await loadAccounts();
+      S.browse.instance = null;
+      if (S.tab === "browse") runSearch(false);
       toast("Settings saved");
     } catch (e) {
       toast((e as Error).message, "err");
@@ -676,6 +900,8 @@ document.addEventListener("click", async (ev) => {
     case "select":
       S.selected = el.dataset.id!;
       S.modFilter = "";
+      S.browse.instance = null;
+      S.browse.hits = [];
       renderSidebar();
       await loadInstanceData();
       break;
@@ -760,6 +986,24 @@ document.addEventListener("click", async (ev) => {
       busy(`mod:${file}`, () => api("DELETE", `/instances/${enc(inst.id)}/mods/${enc(file)}`));
       break;
     }
+    case "browse-source":
+      S.browse.source = el.dataset.v as Source;
+      S.browse.hits = [];
+      runSearch(false);
+      break;
+    case "browse-more":
+      runSearch(true);
+      break;
+    case "browse-install":
+      installOnline(el.dataset.pid!);
+      break;
+    case "browse-versions":
+      versionsModal(el.dataset.pid!, el.dataset.title!);
+      break;
+    case "install-version":
+      closeModal();
+      installOnline(el.dataset.pid!, el.dataset.vid!);
+      break;
     case "clear-console":
       if (inst) [`game:${inst.id}`, ...projectsFor(inst).flatMap((p) => [`build:${p.id}`, `dev:${p.id}`])].forEach((s) => S.logs.delete(s));
       renderMain();
@@ -767,8 +1011,15 @@ document.addEventListener("click", async (ev) => {
   }
 });
 
+let searchTimer: number | undefined;
+
 document.addEventListener("change", (ev) => {
   const el = ev.target as HTMLInputElement;
+  if (el.dataset.action === "browse-sort") {
+    S.browse.sort = el.value;
+    runSearch(false);
+    return;
+  }
   if (el.dataset.action === "toggle-mod") {
     const inst = current();
     if (!inst) return;
@@ -781,7 +1032,16 @@ document.addEventListener("input", (ev) => {
   const el = ev.target as HTMLInputElement;
   if (el.dataset.action === "filter-mods") {
     S.modFilter = el.value;
+    refocus = "mod-filter";
     renderMain();
+  }
+  if (el.dataset.action === "browse-q") {
+    S.browse.q = el.value;
+    clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => {
+      refocus = "browse-q";
+      runSearch(false);
+    }, 300);
   }
 });
 

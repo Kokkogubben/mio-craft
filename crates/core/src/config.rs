@@ -13,6 +13,8 @@ pub struct Config {
     pub selected_account: Option<String>,
     /// Extra JVM arguments added to every launch.
     pub extra_jvm_args: Vec<String>,
+    /// CurseForge API key (from console.curseforge.com). Modrinth needs none.
+    pub curseforge_api_key: Option<String>,
 }
 
 impl Default for Config {
@@ -22,6 +24,7 @@ impl Default for Config {
             default_ram_mb: 4096,
             selected_account: None,
             extra_jvm_args: vec![],
+            curseforge_api_key: None,
         }
     }
 }
@@ -46,6 +49,7 @@ pub struct ConfigPatch {
     pub default_ram_mb: Option<u32>,
     pub selected_account: Option<String>,
     pub extra_jvm_args: Option<Vec<String>>,
+    pub curseforge_api_key: Option<String>,
 }
 
 impl Config {
@@ -62,6 +66,10 @@ impl Config {
         }
         if let Some(v) = p.extra_jvm_args {
             self.extra_jvm_args = v;
+        }
+        if let Some(v) = p.curseforge_api_key {
+            let v = v.trim().to_string();
+            self.curseforge_api_key = if v.is_empty() { None } else { Some(v) };
         }
     }
 }
