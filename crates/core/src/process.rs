@@ -112,7 +112,7 @@ pub async fn spawn_tracked(
         let code = tokio::select! {
             status = child.wait() => status.ok().and_then(|s| s.code()),
             _ = stop_rx => {
-                let _ = child.kill().await;
+                kill_tree(&mut child).await;
                 None
             }
         };
@@ -120,6 +120,24 @@ pub async fn spawn_tracked(
         l2.emit(Event::ProcessExited { source, code });
     });
     Ok(())
+}
+
+/// Kill a child and everything it started. Gradle's start script is only the
+/// top of a chain (script → Gradle → the game), and killing the script alone
+/// leaves the game window open on Windows.
+async fn kill_tree(child: &mut tokio::process::Child) {
+    #[cfg(windows)]
+    if let Some(pid) = child.id() {
+        let mut cmd = tokio::process::Command::new("taskkill");
+        cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .stdin(Stdio::null());
+        hide_window(&mut cmd);
+        let _ = cmd.status().await;
+    }
+    let _ = child.kill().await;
+    let _ = child.wait().await;
 }
 
 /// Last `n` lines of a text file.

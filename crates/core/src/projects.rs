@@ -471,7 +471,9 @@ pub fn dev_source(id: &str) -> String {
 /// offline with a dev username, which is the standard way to test mods.
 pub async fn run_dev(l: &Launcher, id: &str) -> Result<()> {
     let p = get(l, id).await?;
-    let cmd = gradle_command(l, &p, &["runClient"]).await?;
+    // No shared daemon: the game must be a descendant of this command so that
+    // stopping the dev client can close it.
+    let cmd = gradle_command(l, &p, &["runClient", "--no-daemon"]).await?;
     let log = p.path.join("run").join("launcher-dev.log");
     process::spawn_tracked(l, &dev_source(id), cmd, log, vec![]).await
 }
