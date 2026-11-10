@@ -213,6 +213,33 @@ server.registerTool(
     ),
 );
 
+server.registerTool(
+  "check_mod_updates",
+  {
+    description: "Check an instance's Modrinth / CurseForge mods for newer compatible versions.",
+    inputSchema: { instance_id: z.string() },
+  },
+  async ({ instance_id }) =>
+    run(async () => {
+      const r = await call<{ updates: Json[]; checked: number; warnings: string[] }>("GET", `/instances/${enc(instance_id)}/updates`);
+      return {
+        checked: r.checked,
+        updates: r.updates.map((u) => ({ file_name: u.file_name, title: u.title, latest: (u.latest as Json).version_number })),
+        warnings: r.warnings,
+      };
+    }),
+);
+
+server.registerTool(
+  "update_mods",
+  {
+    description: "Update an instance's Modrinth / CurseForge mods. Pass file_names to update only some; omit to update all.",
+    inputSchema: { instance_id: z.string(), file_names: z.array(z.string()).optional() },
+  },
+  async ({ instance_id, file_names }) =>
+    run(() => call("POST", `/instances/${enc(instance_id)}/updates`, { files: file_names })),
+);
+
 // ---------- mod projects ----------
 
 server.registerTool(

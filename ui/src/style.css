@@ -1106,3 +1106,8 @@ button.badge {
   font: 550 11.5px/1.6 inherit;
   font-family: inherit;
 }
+
+.btn.small.update {
+  background: rgba(106, 190, 80, 0.16);
+  color: var(--grass);
+}

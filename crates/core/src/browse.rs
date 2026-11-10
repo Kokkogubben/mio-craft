@@ -120,6 +120,9 @@ pub struct OnlineMod {
     /// Installed only because another mod needed it.
     #[serde(default)]
     pub as_dependency: bool,
+    /// Where the jar was downloaded from (used for modpack export).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
 }
 
 pub type OnlineTags = HashMap<String, OnlineMod>;
@@ -514,6 +517,12 @@ pub struct InstallRequest {
 
 /// Install a mod (and its required dependencies) into an instance.
 pub async fn install(l: &Launcher, instance_id: &str, req: InstallRequest) -> Result<InstallReport> {
+    install_with(l, instance_id, req, None).await
+}
+
+/// `prefetched` is the version to install for the main project, when the
+/// caller already has it (saves a request).
+async fn install_with(l: &Launcher, instance_id: &str, req: InstallRequest, prefetched: Option<ModVersion>) -> Result<InstallReport> {
     let source = Source::parse(&req.source)?;
     let inst = instances::get(l, instance_id).await?;
     loader_name(inst.loader)?;
@@ -550,9 +559,14 @@ pub async fn install(l: &Launcher, instance_id: &str, req: InstallRequest) -> Re
                 report.already_installed.push(title);
                 return Ok(());
             }
-            let version = match &vid {
-                Some(v) => version_by_id(l, source, &pid, v, &inst).await?,
-                None => {
+            let pre = prefetched
+                .as_ref()
+                .filter(|p| !as_dep && Some(&p.version_id) == vid.as_ref())
+                .cloned();
+            let version = match (&vid, pre) {
+                (_, Some(p)) => p,
+                (Some(v), None) => version_by_id(l, source, &pid, v, &inst).await?,
+                (None, None) => {
                     let all = versions(l, source, &pid, &inst).await?;
                     pick_version(&all)
                         .cloned()
@@ -583,7 +597,7 @@ pub async fn install(l: &Launcher, instance_id: &str, req: InstallRequest) -> Re
             http::download(
                 &l.http,
                 &Download {
-                    url,
+                    url: url.clone(),
                     path: dir.join(&version.file.filename),
                     sha1: version.file.sha1.clone(),
                     size: if version.file.size > 0 { Some(version.file.size) } else { None },
@@ -600,6 +614,7 @@ pub async fn install(l: &Launcher, instance_id: &str, req: InstallRequest) -> Re
                     title: title.clone(),
                     page_url,
                     as_dependency: as_dep,
+                    download_url: Some(url),
                 },
             );
             save_tags(l, &inst.id, &tags).await?;
@@ -622,6 +637,144 @@ pub async fn install(l: &Launcher, instance_id: &str, req: InstallRequest) -> Re
     }
     l.progress("mods", 1, 1, "Mods installed");
     l.emit(Event::ModsChanged { instance_id: inst.id.clone() });
+    Ok(report)
+}
+
+// ---------- updates ----------
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdateInfo {
+    pub file_name: String,
+    pub title: String,
+    pub source: Source,
+    pub project_id: String,
+    pub current_version_id: String,
+    pub latest: ModVersion,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UpdateCheck {
+    pub updates: Vec<UpdateInfo>,
+    pub checked: usize,
+    pub warnings: Vec<String>,
+}
+
+/// Decide whether `versions` (newest first) has something newer than `current`.
+/// A version that's older in the list than the one installed never counts,
+/// so a newer beta isn't "updated" back to an older release.
+pub fn newer_version<'a>(versions: &'a [ModVersion], current: &str) -> Option<&'a ModVersion> {
+    let latest = pick_version(versions)?;
+    if latest.version_id == current {
+        return None;
+    }
+    match versions.iter().position(|v| v.version_id == current) {
+        Some(cur_idx) => {
+            let latest_idx = versions.iter().position(|v| v.version_id == latest.version_id)?;
+            (latest_idx < cur_idx).then_some(latest)
+        }
+        // Installed version no longer listed for this instance: offer the latest.
+        None => Some(latest),
+    }
+}
+
+pub async fn check_updates(l: &Launcher, instance_id: &str) -> Result<UpdateCheck> {
+    let inst = instances::get(l, instance_id).await?;
+    loader_name(inst.loader)?;
+    let tags = prune_tags(l, &inst.id).await;
+    let has_cf_key = l.config.read().await.curseforge_api_key.is_some();
+    let mut warnings = vec![];
+    let items: Vec<(String, OnlineMod)> = tags
+        .into_iter()
+        .filter(|(_, t)| {
+            if t.source == Source::Curseforge && !has_cf_key {
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
+    if !has_cf_key && load_tags(l, &inst.id).await.values().any(|t| t.source == Source::Curseforge) {
+        warnings.push("Skipped CurseForge mods: add a CurseForge API key in Settings to check them.".into());
+    }
+    let checked = items.len();
+    l.progress("updates", 0, checked as u64, "Checking for mod updates");
+    use futures::StreamExt;
+    let results: Vec<(String, OnlineMod, Result<Vec<ModVersion>>)> = futures::stream::iter(items)
+        .map(|(file, tag)| {
+            let (l, inst) = (l.clone(), inst.clone());
+            async move {
+                let v = versions(&l, tag.source, &tag.project_id, &inst).await;
+                (file, tag, v)
+            }
+        })
+        .buffer_unordered(6)
+        .collect()
+        .await;
+    let mut updates = vec![];
+    for (file, tag, v) in results {
+        match v {
+            Ok(vs) => {
+                if let Some(n) = newer_version(&vs, &tag.version_id) {
+                    updates.push(UpdateInfo {
+                        file_name: file,
+                        title: tag.title.clone(),
+                        source: tag.source,
+                        project_id: tag.project_id.clone(),
+                        current_version_id: tag.version_id.clone(),
+                        latest: n.clone(),
+                    });
+                }
+            }
+            Err(e) => warnings.push(format!("{}: {e:#}", tag.title)),
+        }
+    }
+    updates.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
+    l.progress("updates", checked as u64, checked as u64, format!("{} update(s) available", updates.len()));
+    Ok(UpdateCheck { updates, checked, warnings })
+}
+
+/// Update the given jar files (or every mod with an update when `files` is None).
+pub async fn apply_updates(l: &Launcher, instance_id: &str, files: Option<Vec<String>>) -> Result<InstallReport> {
+    let check = check_updates(l, instance_id).await?;
+    let mut report = InstallReport { installed: vec![], already_installed: vec![], warnings: check.warnings };
+    for u in check.updates {
+        if let Some(f) = &files {
+            if !f.contains(&u.file_name) {
+                continue;
+            }
+        }
+        let was_dep = load_tags(l, instance_id).await.get(&u.file_name).map(|t| t.as_dependency).unwrap_or(false);
+        let r = install_with(
+            l,
+            instance_id,
+            InstallRequest {
+                source: match u.source {
+                    Source::Modrinth => "modrinth".into(),
+                    Source::Curseforge => "curseforge".into(),
+                },
+                project_id: u.project_id.clone(),
+                version_id: Some(u.latest.version_id.clone()),
+            },
+            Some(u.latest.clone()),
+        )
+        .await;
+        match r {
+            Ok(r) => {
+                if was_dep {
+                    // Keep "installed as a dependency" across updates.
+                    let mut tags = load_tags(l, instance_id).await;
+                    if let Some(t) = r.installed.first().and_then(|f| tags.get_mut(f)) {
+                        t.as_dependency = true;
+                    }
+                    save_tags(l, instance_id, &tags).await?;
+                }
+                report.installed.extend(r.installed);
+                report.warnings.extend(r.warnings);
+            }
+            Err(e) => report.warnings.push(format!("{}: {e:#}", u.title)),
+        }
+    }
+    l.emit(Event::ModsChanged { instance_id: instance_id.into() });
     Ok(report)
 }
 
@@ -701,9 +854,17 @@ mod tests {
                             "files":[{"url":format!("{base}/files/glow.jar"),"filename":"glow-1.0.jar","primary":true,"hashes":{"sha1":ms},"size":14}],
                             "dependencies":[{"project_id":"DEP","dependency_type":"required"},{"project_id":"OPT","dependency_type":"optional"}]}]))
                     } else {
-                        Json(json!([{"id":"d1","project_id":"DEP","name":"API","version_number":"0.1","version_type":"release","date_published":"x",
+                        let v1 = json!({"id":"d1","project_id":"DEP","name":"API","version_number":"0.1","version_type":"release","date_published":"x",
                             "files":[{"url":format!("{base}/files/api.jar"),"filename":"fabric-api-0.1.jar","primary":true,"hashes":{"sha1":ds},"size":20}],
-                            "dependencies":[]}]))
+                            "dependencies":[]});
+                        if NEW_API.load(std::sync::atomic::Ordering::SeqCst) {
+                            let mut v2 = v1.clone();
+                            v2["id"] = json!("d2");
+                            v2["files"][0]["filename"] = json!("fabric-api-0.2.jar");
+                            Json(json!([v2, v1]))
+                        } else {
+                            Json(json!([v1]))
+                        }
                     }
                 }
             }))
@@ -745,6 +906,40 @@ mod tests {
         let again = install(&l, &inst.id, InstallRequest { source: "modrinth".into(), project_id: "MAIN".into(), version_id: None }).await.unwrap();
         assert!(again.installed.is_empty());
         assert_eq!(again.already_installed, vec!["Glow Mod"]);
+        assert!(tags["glow-1.0.jar"].download_url.as_deref().unwrap().ends_with("/files/glow.jar"));
+
+        // A new release of the dependency appears; update it.
+        NEW_API.store(true, std::sync::atomic::Ordering::SeqCst);
+        let check = check_updates(&l, &inst.id).await.unwrap();
+        assert_eq!(check.updates.len(), 1, "{:?}", check);
+        assert_eq!(check.updates[0].latest.version_id, "d2");
+        let r = apply_updates(&l, &inst.id, None).await.unwrap();
+        assert_eq!(r.installed, vec!["fabric-api-0.2.jar"]);
+        let dir = l.paths.mods_dir(&inst.id);
+        assert!(dir.join("fabric-api-0.2.jar").exists() && !dir.join("fabric-api-0.1.jar").exists());
+        let tags = load_tags(&l, &inst.id).await;
+        assert!(tags["fabric-api-0.2.jar"].as_dependency, "dependency flag kept");
+        assert!(check_updates(&l, &inst.id).await.unwrap().updates.is_empty());
+    }
+
+    static NEW_API: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    fn ver(id: &str, ch: &str) -> ModVersion {
+        ModVersion {
+            source: Source::Modrinth, project_id: "p".into(), version_id: id.into(), name: id.into(),
+            version_number: id.into(), date: String::new(), channel: ch.into(),
+            file: ModFile { url: None, filename: format!("{id}.jar"), sha1: None, size: 0 }, dependencies: vec![],
+        }
+    }
+
+    #[test]
+    fn update_decisions() {
+        // newest first
+        let vs = vec![ver("3b", "beta"), ver("2", "release"), ver("1", "release")];
+        assert_eq!(newer_version(&vs, "1").unwrap().version_id, "2");
+        assert!(newer_version(&vs, "2").is_none());
+        assert!(newer_version(&vs, "3b").is_none(), "never downgrade a beta to an older release");
+        assert_eq!(newer_version(&vs, "gone").unwrap().version_id, "2");
     }
 
     #[test]

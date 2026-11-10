@@ -98,6 +98,7 @@ const S = {
   running: new Set<string>(),
   busy: new Set<string>(),
   modFilter: "",
+  updates: { instance: null as string | null, byFile: new Map<string, { title: string; latest: ModVersion }>(), checked: false },
   logs: new Map<string, string[]>(),
   progress: null as null | { task: string; current: number; total: number; message: string },
 };
@@ -284,6 +285,48 @@ function renderMain() {
 
 let refocus: string | null = null;
 
+function updateFor(inst: Instance, m: ModEntry) {
+  if (S.updates.instance !== inst.id || !m.online) return null;
+  return S.updates.byFile.get(m.file_name.replace(/\.disabled$/, "")) ?? null;
+}
+
+function shortVer(v: string): string {
+  return v.length > 18 ? `${v.slice(0, 16)}…` : v;
+}
+
+function updatesButton(inst: Instance): string {
+  if (!S.mods.some((m) => m.online)) return "";
+  const n = S.updates.instance === inst.id ? S.updates.byFile.size : 0;
+  if (S.busy.has("check-updates")) return '<button class="btn ghost" disabled>Checking…</button>';
+  if (S.busy.has("update-all")) return '<button class="btn primary" disabled>Updating…</button>';
+  if (n > 0) return `<button class="btn primary" data-action="update-all">Update all (${n})</button>`;
+  if (S.updates.instance === inst.id && S.updates.checked) return '<button class="btn ghost" data-action="check-updates" title="Check again">Up to date ✓</button>';
+  return '<button class="btn ghost" data-action="check-updates">Check for updates</button>';
+}
+
+async function checkUpdates() {
+  const inst = current();
+  if (!inst) return;
+  await busy("check-updates", async () => {
+    const r = await api<{ updates: { file_name: string; title: string; latest: ModVersion }[]; warnings: string[] }>("GET", `/instances/${enc(inst.id)}/updates`);
+    S.updates = { instance: inst.id, byFile: new Map(r.updates.map((u) => [u.file_name, u])), checked: true };
+    r.warnings.forEach((w) => toast(w, "err"));
+    if (!r.updates.length) toast("All browser-installed mods are up to date");
+  });
+}
+
+async function applyUpdates(files?: string[]) {
+  const inst = current();
+  if (!inst) return;
+  const key = files ? `update:${files[0]}` : "update-all";
+  await busy(key, async () => {
+    const r = await api<{ installed: string[]; warnings: string[] }>("POST", `/instances/${enc(inst.id)}/updates`, { files });
+    for (const f of files ?? [...S.updates.byFile.keys()]) S.updates.byFile.delete(f);
+    r.warnings.forEach((w) => toast(w, "err"));
+    if (r.installed.length) toast(`Updated ${r.installed.length} mod${r.installed.length === 1 ? "" : "s"}`);
+  });
+}
+
 function projectsFor(inst: Instance) {
   return S.projects.filter((p) => p.instance_id === inst.id);
 }
@@ -317,6 +360,7 @@ function modsTab(inst: Instance): string {
           <div class="mod-file">${esc(m.file_name)} · ${fmtSize(m.size)}</div>
         </div>
         <div class="mod-actions">
+          ${updateFor(inst, m) ? `<button class="btn small update" data-action="update-one" data-file="${esc(m.file_name)}" ${S.busy.has(`update:${m.file_name}`) || S.busy.has("update-all") ? "disabled" : ""} title="Update to ${esc(updateFor(inst, m)!.latest.version_number)}">${S.busy.has(`update:${m.file_name}`) ? "Updating…" : `Update → ${esc(shortVer(updateFor(inst, m)!.latest.version_number))}`}</button>` : ""}
           ${proj ? `<button class="btn small" data-action="rebuild" data-project="${esc(proj)}" ${building ? "disabled" : ""}>${building ? "Building…" : "Rebuild"}</button>` : ""}
           <button class="icon-btn" data-action="delete-mod" data-file="${esc(m.file_name)}" title="Delete" aria-label="Delete mod">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
@@ -329,6 +373,7 @@ function modsTab(inst: Instance): string {
     <div class="toolbar">
       <input id="mod-filter" class="input" placeholder="Search mods" value="${esc(S.modFilter)}" data-action="filter-mods"/>
       <span class="muted">${S.mods.filter((m) => m.enabled).length} enabled · ${claudeCount} by Claude</span>
+      ${updatesButton(inst)}
       <button class="btn ghost" data-action="open-path" data-path="${esc(inst.mods_dir)}">Open mods folder</button>
     </div>
     ${
@@ -986,6 +1031,15 @@ document.addEventListener("click", async (ev) => {
       busy(`mod:${file}`, () => api("DELETE", `/instances/${enc(inst.id)}/mods/${enc(file)}`));
       break;
     }
+    case "check-updates":
+      checkUpdates();
+      break;
+    case "update-all":
+      applyUpdates();
+      break;
+    case "update-one":
+      applyUpdates([el.dataset.file!.replace(/\.disabled$/, "")]);
+      break;
     case "browse-source":
       S.browse.source = el.dataset.v as Source;
       S.browse.hits = [];

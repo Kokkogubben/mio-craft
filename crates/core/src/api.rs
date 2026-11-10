@@ -93,6 +93,7 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}/mods/{file}", delete(delete_mod))
         .route("/instances/{id}/mods/{file}/enabled", post(set_mod_enabled))
         .route("/instances/{id}/online-mods", post(install_online))
+        .route("/instances/{id}/updates", get(check_updates).post(apply_updates))
         .route("/browse/{source}/search", get(browse_search))
         .route("/browse/{source}/projects/{pid}/versions", get(browse_versions))
         .route("/projects", get(list_projects).post(create_project))
@@ -363,6 +364,20 @@ async fn browse_versions(State(s): State<AppState>, Path((source, pid)): Path<(S
 
 async fn install_online(State(s): State<AppState>, Path(id): Path<String>, Json(req): Json<browse::InstallRequest>) -> R<browse::InstallReport> {
     Ok(Json(browse::install(&s.l, &id, req).await?))
+}
+
+async fn check_updates(State(s): State<AppState>, Path(id): Path<String>) -> R<browse::UpdateCheck> {
+    Ok(Json(browse::check_updates(&s.l, &id).await?))
+}
+
+#[derive(Deserialize, Default)]
+struct UpdateBody {
+    files: Option<Vec<String>>,
+}
+
+async fn apply_updates(State(s): State<AppState>, Path(id): Path<String>, body: Option<Json<UpdateBody>>) -> R<browse::InstallReport> {
+    let b = body.map(|b| b.0).unwrap_or_default();
+    Ok(Json(browse::apply_updates(&s.l, &id, b.files).await?))
 }
 
 async fn list_projects(State(s): State<AppState>) -> R<Vec<projects::ModProject>> {
