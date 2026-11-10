@@ -8,9 +8,13 @@ installs it. The mod then shows up in the launcher's mod list, tagged
 - **Instances** for any Minecraft version, with **Fabric** or **NeoForge** (or vanilla)
 - **Mod list** per instance: enable/disable, delete, search, and a *Rebuild* button for Claude-made mods
 - **Mod browser** for **Modrinth** and **CurseForge**: results are filtered to the instance's Minecraft version and loader, and required dependencies install automatically
+- **Mod updates**: check browser-installed mods for newer compatible versions and update one or all
+- **Make a mod with Claude**: describe a mod in the launcher and it opens Claude Code with your idea and the instance ready; "Ask Claude" does the same for changing an existing mod
+- **Modpacks**: import Modrinth `.mrpack` files (Fabric and NeoForge) and export instances to share, with Claude's mods included
+- **Sign-in tokens in Windows Credential Manager**, not in a plain file
 - **Microsoft account sign-in**
 - **Java and Gradle downloaded automatically**, so you don't need to install anything to play or to build mods
-- **MCP server for Claude Code** with 20 tools: create instances and mods, build, install, run a test client, read logs and crash reports
+- **MCP server for Claude Code** with 23 tools: create instances and mods, build, install, run a test client, read logs and crash reports
 - Small: a Tauri app (Rust + a web UI), not Electron
 
 ## How it fits together
@@ -34,6 +38,7 @@ Data lives in `%APPDATA%\ClaudeLauncher`:
 instances/<id>/minecraft/      game folder (mods/, saves/, logs/ …)
 instances/<id>/claude-mods.json which jars in mods/ Claude built
 instances/<id>/online-mods.json which jars came from Modrinth / CurseForge
+exports/                       exported .mrpack modpacks
 projects/<mod_id>/             mod source code Claude Code edits (has its own CLAUDE.md)
 versions/ libraries/ assets/   shared Minecraft files
 java/ gradle/                  downloaded JDKs and Gradle
@@ -58,8 +63,10 @@ npm run build    # make the installer in target/release/bundle/
 
 ### 2. Connect Claude Code
 
-Open the launcher, go to **Settings → Connect Claude Code**, and run the command
-it shows. It looks like this:
+The launcher's MCP server runs on [Node.js](https://nodejs.org) (LTS), so install
+that alongside [Claude Code](https://claude.com/claude-code). Then open the
+launcher, go to **Settings → Connect Claude Code** and press **Connect
+automatically**. Or run the command it shows, which looks like this:
 
 ```
 claude mcp add --scope user claude-launcher -- node "C:\Program Files\Claude Launcher\mcp\claude-launcher-mcp.mjs"
@@ -72,6 +79,11 @@ Keep the launcher open while Claude Code works. Then ask something like:
 Claude Code creates the project, edits the code, runs `build_mod` until it
 compiles, installs it with `install_mod`, and can test it in an offline dev client
 with `run_dev_client`.
+
+You can also start from the launcher: on an instance's **Claude projects** tab,
+describe the mod and press **Open in Claude Code**. A terminal opens with Claude
+Code and a prompt that already names the instance, its Minecraft version and
+loader, and the tools to use.
 
 ### 3. CurseForge (optional)
 
@@ -106,6 +118,8 @@ Microsoft requires every third-party launcher to use its own Azure app:
 | `list_minecraft_versions`, `list_loader_versions` | Available versions |
 | `list_mods`, `set_mod_enabled` | An instance's mod list |
 | `search_online_mods`, `install_online_mod` | Find and install Modrinth / CurseForge mods (with required dependencies) |
+| `check_mod_updates`, `update_mods` | Update browser-installed mods |
+| `export_modpack` | Export an instance as a `.mrpack` |
 | `list_mod_projects`, `get_mod_project`, `create_mod` | Mod projects from version-matched templates |
 | `build_mod` | Compile with Gradle; returns compiler errors |
 | `install_mod` | Build and install into the instance (replaces older builds) |
@@ -132,6 +146,18 @@ the core and the MCP server respect it).
 
 See [NOTES-FOR-CLAUDE-CODE.md](NOTES-FOR-CLAUDE-CODE.md) for what still needs
 checking on a real Windows machine.
+
+## Modpacks
+
+**Import**: the download button next to *Instances* takes a `.mrpack`. Fabric and
+NeoForge packs are supported (Forge and Quilt aren't). Files are only downloaded
+from the hosts the format allows (Modrinth's CDN, GitHub, GitLab) and checked
+against their hashes.
+
+**Export**: *Export* on an instance writes a `.mrpack` to the `exports` folder.
+Modrinth mods are linked rather than copied, and mods Claude made are included.
+Other mods (from CurseForge or added by hand) are left out unless you tick the
+box confirming you're allowed to share them.
 
 ## Legal
 

@@ -98,6 +98,7 @@ const S = {
   running: new Set<string>(),
   busy: new Set<string>(),
   modFilter: "",
+  makeIdea: "",
   updates: { instance: null as string | null, byFile: new Map<string, { title: string; latest: ModVersion }>(), checked: false },
   logs: new Map<string, string[]>(),
   progress: null as null | { task: string; current: number; total: number; message: string },
@@ -571,15 +572,25 @@ function projectsTab(inst: Instance): string {
         </div>
         <div class="mod-actions">
           <button class="btn small" data-action="rebuild" data-project="${esc(p.id)}" ${building ? "disabled" : ""}>${building ? "Building…" : "Build & install"}</button>
+          <button class="btn small ghost" data-action="ask-claude" data-project="${esc(p.id)}" title="Ask Claude Code to change this mod">Ask Claude</button>
           <button class="btn small ghost" data-action="${dev ? "stop-dev" : "run-dev"}" data-project="${esc(p.id)}" title="Test with an offline development client">${dev ? "Stop test" : "Test"}</button>
         </div>
       </div>`;
     })
     .join("");
+  if (inst.loader === "vanilla") {
+    return `<div class="note">Vanilla instances can't load mods. Create a Fabric or NeoForge instance to make mods with Claude.</div>`;
+  }
+  const opening = S.busy.has("claude-open");
   return `
-    <div class="note claude-note">
-      <strong>✦ Mods from Claude Code.</strong> Ask Claude Code to make a mod for this instance; it creates the project, writes the code, builds it and installs it here.
-      ${S.projects.length ? "" : `Not connected yet? <button class="link" data-action="settings">Connect Claude Code</button>`}
+    <div class="make">
+      <label for="make-idea"><strong>✦ Make a mod with Claude</strong> <span class="muted small">for ${esc(inst.name)} · ${esc(inst.mc_version)} ${loaderLabel(inst.loader)}</span></label>
+      <textarea id="make-idea" class="input" rows="3" data-action="make-idea" placeholder="Describe your mod, e.g. Ores glow faintly in the dark so they're easier to spot in caves">${esc(S.makeIdea)}</textarea>
+      <div class="make-actions">
+        <span class="muted small">Opens Claude Code in a new window with your idea and this instance ready. <button class="link" data-action="settings">Not connected?</button></span>
+        <button class="btn ghost small" data-action="copy-prompt">Copy prompt</button>
+        <button class="btn primary" data-action="make-mod" ${opening ? "disabled" : ""}>${opening ? "Opening…" : "Open in Claude Code"}</button>
+      </div>
     </div>
     ${projects.length ? `<div class="mod-list">${rows}</div>` : '<p class="muted pad">No Claude projects for this instance yet.</p>'}`;
 }
@@ -800,14 +811,28 @@ async function newInstanceModal() {
 }
 
 async function settingsModal() {
-  const [cfg, path] = await Promise.all([api("GET", "/config"), mcpServerPath()]);
+  const [cfg, path, cc] = await Promise.all([
+    api("GET", "/config"),
+    mcpServerPath(),
+    api<{ claude_path: string | null; node_path: string | null; connected: boolean }>("GET", "/claude-code").catch(() => null),
+  ]);
+  const ccLine = !cc
+    ? ""
+    : cc.connected
+      ? '<p class="ok-line">✓ Connected. Claude Code can use the launcher.</p>'
+      : !cc.claude_path
+        ? `<p class="muted small">Claude Code isn't installed. <button class="link" data-action="open-url" data-url="https://claude.com/claude-code">Get Claude Code</button></p>`
+        : !cc.node_path
+          ? `<p class="muted small">The launcher's MCP server needs Node.js. <button class="link" data-action="open-url" data-url="https://nodejs.org/">Install Node.js LTS</button>, then reopen Settings.</p>`
+          : `<p><button class="btn primary small" data-action="connect-claude" ${inTauri ? "" : "disabled"}>Connect automatically</button></p>`;
   const status = await api("GET", "/status");
   const cmd = `claude mcp add --scope user claude-launcher -- node "${path}"`;
   openModal(`
     <h2>Settings</h2>
     <section class="settings-sec">
       <h3>✦ Connect Claude Code</h3>
-      <p class="muted small">Run this once in a terminal. Claude Launcher needs to be open while Claude Code uses it.</p>
+      ${ccLine}
+      <p class="muted small">${cc?.connected ? "To connect it manually, run" : "Or run this once in a terminal"}. Claude Launcher needs to be open while Claude Code uses it.</p>
       <div class="copy"><code id="mcp-cmd">${esc(cmd)}</code><button class="btn small" data-copy="${esc(cmd)}">Copy</button></div>
       <p class="muted small">Then ask Claude Code something like "make a Fabric mod for my instance that adds a ruby ore".</p>
     </section>
@@ -925,6 +950,54 @@ function instanceModal(inst: Instance) {
     } catch (e) {
       toast((e as Error).message, "err");
     }
+  });
+}
+
+async function openClaude(body: { instance_id?: string; project_id?: string; request: string }, dryRun = false) {
+  if (!body.request.trim()) {
+    toast("Describe what you want first", "err");
+    return;
+  }
+  return busy(dryRun ? "claude-copy" : "claude-open", async () => {
+    const r = await api<{ opened: boolean; prompt: string; error?: string }>("POST", "/claude-code/open", { ...body, dry_run: dryRun });
+    if (dryRun) {
+      await navigator.clipboard.writeText(r.prompt);
+      toast("Prompt copied. Paste it into Claude Code.");
+      return;
+    }
+    if (r.opened) {
+      toast("Claude Code is opening in a new window");
+      if (!body.project_id) S.makeIdea = "";
+      return;
+    }
+    openModal(`
+      <h2>Couldn't open Claude Code</h2>
+      <p class="muted">${esc(r.error ?? "")}</p>
+      <p class="small">Paste this into Claude Code instead:</p>
+      <div class="copy"><code>${esc(r.prompt)}</code></div>
+      <div class="modal-actions">
+        <button class="btn ghost" data-action="close-modal">Close</button>
+        <button class="btn primary" data-copy="${esc(r.prompt)}">Copy prompt</button>
+      </div>`);
+  });
+}
+
+function askClaudeModal(p: Project) {
+  openModal(`
+    <h2>Ask Claude about ${esc(p.name)}</h2>
+    <label class="field"><span>What should change?</span><textarea id="ask-text" class="input" rows="4" placeholder="Make the glow brighter, and add a config option for it"></textarea></label>
+    <div class="modal-actions">
+      <button class="btn ghost" data-action="close-modal">Cancel</button>
+      <button class="btn ghost" id="ask-copy">Copy prompt</button>
+      <button class="btn primary" id="ask-go">Open in Claude Code</button>
+    </div>`, (root) => root.querySelector<HTMLTextAreaElement>("#ask-text")?.focus());
+  const text = () => $<HTMLTextAreaElement>("#ask-text").value;
+  $("#ask-copy").addEventListener("click", () => openClaude({ project_id: p.id, request: text() }, true));
+  $("#ask-go").addEventListener("click", async () => {
+    const t = text();
+    if (!t.trim()) return toast("Describe what you want first", "err");
+    closeModal();
+    await openClaude({ project_id: p.id, request: t });
   });
 }
 
@@ -1105,6 +1178,24 @@ document.addEventListener("click", async (ev) => {
       busy(`mod:${file}`, () => api("DELETE", `/instances/${enc(inst.id)}/mods/${enc(file)}`));
       break;
     }
+    case "make-mod":
+      if (inst) openClaude({ instance_id: inst.id, request: S.makeIdea });
+      break;
+    case "copy-prompt":
+      if (inst) openClaude({ instance_id: inst.id, request: S.makeIdea }, true);
+      break;
+    case "ask-claude": {
+      const p = S.projects.find((x) => x.id === el.dataset.project);
+      if (p) askClaudeModal(p);
+      break;
+    }
+    case "connect-claude":
+      busy("connect", async () => {
+        await api("POST", "/claude-code/connect", { mcp_path: await mcpServerPath() });
+        toast("Claude Code is connected to the launcher");
+        settingsModal();
+      });
+      break;
     case "import-pack":
       $<HTMLInputElement>("#pack-file").click();
       break;
@@ -1168,6 +1259,9 @@ document.addEventListener("input", (ev) => {
     S.modFilter = el.value;
     refocus = "mod-filter";
     renderMain();
+  }
+  if (el.dataset.action === "make-idea") {
+    S.makeIdea = el.value;
   }
   if (el.dataset.action === "browse-q") {
     S.browse.q = el.value;

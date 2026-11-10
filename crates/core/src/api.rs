@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, config, modpack, instances, launch, loaders, mods, mojang, process, projects, Launcher};
+use crate::{auth, browse, claude_code, config, modpack, instances, launch, loaders, mods, mojang, process, projects, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -107,6 +107,9 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/projects/{id}/install", post(install_project))
         .route("/projects/{id}/dev", post(start_dev).delete(stop_dev))
         .route("/projects/{id}/dev/logs", get(dev_logs))
+        .route("/claude-code", get(claude_status))
+        .route("/claude-code/connect", post(claude_connect))
+        .route("/claude-code/open", post(claude_open))
         .route("/events", get(events))
         .layer(middleware::from_fn_with_state(state.clone(), require_token))
         .with_state(state);
@@ -394,6 +397,56 @@ async fn import_pack(State(s): State<AppState>, body: axum::body::Bytes) -> R<mo
 
 async fn export_pack(State(s): State<AppState>, Path(id): Path<String>, body: Option<Json<modpack::ExportOptions>>) -> R<modpack::ExportReport> {
     Ok(Json(modpack::export(&s.l, &id, body.map(|b| b.0).unwrap_or_default()).await?))
+}
+
+async fn claude_status() -> R<claude_code::Status> {
+    Ok(Json(claude_code::status().await))
+}
+
+#[derive(Deserialize)]
+struct ConnectBody {
+    mcp_path: String,
+}
+
+async fn claude_connect(Json(b): Json<ConnectBody>) -> R<Value> {
+    claude_code::connect(&b.mcp_path).await?;
+    Ok(ok())
+}
+
+#[derive(Deserialize)]
+struct OpenBody {
+    instance_id: Option<String>,
+    project_id: Option<String>,
+    request: String,
+    /// Only build the prompt (for "Copy prompt").
+    #[serde(default)]
+    dry_run: bool,
+}
+
+/// Build the prompt and try to open Claude Code with it. Always returns the
+/// prompt so the UI can offer to copy it if opening fails.
+async fn claude_open(State(s): State<AppState>, Json(b): Json<OpenBody>) -> R<Value> {
+    if b.request.trim().is_empty() {
+        return Err(anyhow::anyhow!("describe what you want first").into());
+    }
+    let (prompt, cwd) = match (&b.project_id, &b.instance_id) {
+        (Some(pid), _) => {
+            let p = projects::get(&s.l, pid).await?;
+            (claude_code::project_prompt(&p, &b.request), p.path.clone())
+        }
+        (None, Some(iid)) => {
+            let i = instances::get(&s.l, iid).await?;
+            (claude_code::new_mod_prompt(&i, &b.request), s.l.paths.projects())
+        }
+        _ => return Err(anyhow::anyhow!("give an instance_id or project_id").into()),
+    };
+    if b.dry_run {
+        return Ok(Json(json!({ "opened": false, "prompt": prompt })));
+    }
+    match claude_code::open(&s.l, &cwd, &prompt).await {
+        Ok(()) => Ok(Json(json!({ "opened": true, "prompt": prompt }))),
+        Err(e) => Ok(Json(json!({ "opened": false, "prompt": prompt, "error": format!("{e:#}") }))),
+    }
 }
 
 async fn list_projects(State(s): State<AppState>) -> R<Vec<projects::ModProject>> {

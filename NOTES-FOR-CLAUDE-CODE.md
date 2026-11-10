@@ -103,9 +103,38 @@ the real APIs, check:
   when its jar's mod id matches the project slug (with `-` → `_`). This is a
   heuristic and may reinstall libraries whose slug differs from their mod id.
 
-## 7. Polish ideas (not done)
+## 7. Sign-in token storage (`secrets.rs`, `auth.rs`)
 
-- Update checker for browser-installed mods (compare `online-mods.json` versions with the newest compatible version).
+Tokens go into Windows Credential Manager via the `keyring` crate (service
+`ClaudeLauncher`, entries `<uuid>:refresh` and `<uuid>:minecraft`; split because
+of Windows' 2,560-byte limit per credential). Tested with an in-memory store
+only. On Windows, check that sign-in saves entries (visible in Control Panel →
+Credential Manager → Windows Credentials), that `accounts.json` no longer has
+tokens, and that a 0.1 `accounts.json` with tokens gets migrated.
+
+## 8. Opening Claude Code from the launcher (`claude_code.rs`)
+
+Windows only, never run. Check:
+- `find_program` finds `claude` (native installer: `%USERPROFILE%\.local\bin\claude.exe`;
+  npm: `%APPDATA%\npm\claude.cmd`) and `node`.
+- **Connect automatically** runs `claude mcp remove/add --scope user` and the
+  tools then show up in Claude Code.
+- **Open in Claude Code** opens a PowerShell window in the projects folder with
+  Claude Code running the prompt. The prompt passes through `ps_quote`, which
+  turns `"` into `'` because Windows PowerShell 5.1 mangles embedded double
+  quotes in native arguments. Try ideas with quotes, apostrophes, `&`, `%` and
+  non-ASCII text.
+- Claude Code asks the user to trust the projects folder the first time; that's expected.
+
+## 9. Modpacks (`modpack.rs`)
+
+The round trip (export, then import into a new instance) and the path-traversal
+guard are tested locally. Still to try: importing real packs from Modrinth
+(large ones, `client-overrides`, files with `env.client = "unsupported"`), and
+importing an exported pack into another launcher (Prism, Modrinth App).
+
+## 10. Polish ideas (not done)
+
 - Mod detail pages (README/gallery) inside the browser.
 - Show the game's log level colours more faithfully; filter by source in the console.
 - Tray icon / minimise to tray while playing.

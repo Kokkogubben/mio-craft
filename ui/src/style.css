@@ -1134,3 +1134,49 @@ button.badge {
   display: flex;
   gap: 2px;
 }
+
+.make {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--claude-bg);
+  border: 1px solid rgba(232, 130, 79, 0.25);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.make label strong {
+  color: var(--claude);
+}
+
+.make textarea {
+  resize: vertical;
+  min-height: 64px;
+  font: inherit;
+  user-select: text;
+}
+
+.make-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.make-actions > .muted {
+  flex: 1;
+}
+
+.btn.primary[data-action="make-mod"] {
+  background: var(--claude);
+  color: #1d0f07;
+}
+
+.ok-line {
+  color: var(--grass);
+  margin: 0 0 8px;
+  font-weight: 550;
+}
+
+textarea.input {
+  font: inherit;
+}

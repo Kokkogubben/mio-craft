@@ -299,12 +299,14 @@ pub async fn export(l: &Launcher, instance_id: &str, opts: ExportOptions) -> Res
     for m in list.iter().filter(|m| m.enabled) {
         let label = m.name.clone().unwrap_or_else(|| m.file_name.clone());
         let src = mods_dir.join(&m.file_name);
-        let modrinth_url = m
-            .online
-            .as_ref()
-            .filter(|o| o.source == Source::Modrinth)
-            .and_then(|o| o.download_url.clone())
-            .filter(|u| host_allowed(u));
+        let from_modrinth = m.online.as_ref().filter(|o| o.source == Source::Modrinth);
+        let mut modrinth_url = from_modrinth.and_then(|o| o.download_url.clone()).filter(|u| host_allowed(u));
+        if modrinth_url.is_none() {
+            if let Some(o) = from_modrinth {
+                // Installed before links were recorded: ask Modrinth.
+                modrinth_url = modrinth_file_url(l, &o.version_id, &m.file_name).await.filter(|u| host_allowed(u));
+            }
+        }
         if let Some(url) = modrinth_url {
             let p = src.clone();
             let (s1, s512, size) = tokio::task::spawn_blocking(move || sha_both(&p)).await??;
@@ -319,7 +321,8 @@ pub async fn export(l: &Launcher, instance_id: &str, opts: ExportOptions) -> Res
         } else {
             let why = match &m.online {
                 Some(o) if o.source == Source::Curseforge => "from CurseForge, which doesn't allow linking in .mrpack files",
-                _ => "added by hand; it's unknown whether it may be shared",
+                Some(_) => "from Modrinth, but its download link couldn't be found; reinstall it from Browse",
+                None => "added by hand; it's unknown whether it may be shared",
             };
             report.left_out.push(format!("{label} ({why})"));
         }
@@ -364,6 +367,18 @@ pub async fn export(l: &Launcher, instance_id: &str, opts: ExportOptions) -> Res
     .await??;
     report.path = out;
     Ok(report)
+}
+
+/// Download URL of a Modrinth version's file (matching `file_name` if it has several).
+async fn modrinth_file_url(l: &Launcher, version_id: &str, file_name: &str) -> Option<String> {
+    let url = format!("{}/version/{}", browse::modrinth_api(), browse::urlencode(version_id));
+    let v: serde_json::Value = l.http.get(url).send().await.ok()?.json().await.ok()?;
+    let files = v["files"].as_array()?;
+    files
+        .iter()
+        .find(|f| f["filename"].as_str() == Some(file_name))
+        .or_else(|| files.iter().find(|f| f["primary"].as_bool() == Some(true)))
+        .and_then(|f| f["url"].as_str().map(String::from))
 }
 
 fn walk(dir: &Path) -> Result<Vec<PathBuf>> {

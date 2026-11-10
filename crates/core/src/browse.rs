@@ -729,7 +729,11 @@ pub async fn check_updates(l: &Launcher, instance_id: &str) -> Result<UpdateChec
         }
     }
     updates.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
-    l.progress("updates", checked as u64, checked as u64, format!("{} update(s) available", updates.len()));
+    l.progress("updates", checked as u64, checked as u64, match updates.len() {
+        0 => "All mods are up to date".to_string(),
+        1 => "1 update available".to_string(),
+        n => format!("{n} updates available"),
+    });
     Ok(UpdateCheck { updates, checked, warnings })
 }
 
