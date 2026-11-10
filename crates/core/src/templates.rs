@@ -220,7 +220,7 @@ dependencies {{
     {conf} "net.fabricmc.fabric-api:fabric-api:${{project.fabric_version}}"
 }}
 
-processResources {{
+{live_api}processResources {{
     inputs.property "version", project.version
     filesMatching("fabric.mod.json") {{
         expand "version": inputs.properties.version
@@ -244,8 +244,20 @@ jar {{
 }}
 "#,
         loom = s.toolchain.plugin_version,
+        live_api = if unobf { LIVE_API_BLOCK } else { "" },
     )
 }
+
+/// Claude Launcher passes `-Pclaude_live_api=<jar>` so mods can implement live
+/// behaviours (dev.claudelauncher.live.api) without bundling the companion.
+const LIVE_API_BLOCK: &str = r#"// Claude Launcher live mode: behaviour interfaces for live content.
+if (project.hasProperty('claude_live_api') && file(project.claude_live_api).exists()) {
+    dependencies {
+        compileOnly files(project.claude_live_api)
+    }
+}
+
+"#;
 
 fn fabric_props(s: &ModSpec) -> String {
     format!(
@@ -548,6 +560,7 @@ mod tests {
         let f = render(&s);
         assert!(!f["build.gradle"].contains("mappings"));
         assert!(f["build.gradle"].contains("net.fabricmc.fabric-loom"));
+        assert!(f["build.gradle"].contains("claude_live_api"));
         assert_eq!(s.toolchain.gradle_version, GRADLE_9);
         assert_eq!(s.toolchain.gradle_jdk, 25);
     }

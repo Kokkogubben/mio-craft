@@ -196,6 +196,7 @@ pub async fn launch(l: &Launcher, instance_id: &str, account_id: Option<&str>) -
         let _guard = l.install_lock.lock().await;
         mojang::install_files(l, inst.version_id.as_ref().unwrap()).await?;
     }
+    crate::companion::sync(l, &inst).await?;
     let account = auth::usable_account(l, account_id).await?;
     let plan = plan(l, &inst, &account).await?;
 

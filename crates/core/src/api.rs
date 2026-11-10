@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, crash, modpack, instances, launch, loaders, mods, mojang, process, projects, Launcher};
+use crate::{auth, browse, claude_code, config, crash, live, live_content, modpack, instances, launch, loaders, mods, mojang, process, projects, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -96,6 +96,13 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}/updates", get(check_updates).post(apply_updates))
         .route("/instances/{id}/export", post(export_pack))
         .route("/instances/{id}/crash", get(get_crash))
+        .route("/instances/{id}/live", get(live_status))
+        .route("/instances/{id}/live/blocks", post(live_block))
+        .route("/instances/{id}/live/items", post(live_item))
+        .route("/instances/{id}/live/{kind}/{cid}", delete(live_remove))
+        .route("/instances/{id}/live/give", post(live_give))
+        .route("/instances/{id}/live/command", post(live_command))
+        .route("/projects/{id}/hotswap", post(hotswap_project))
         .route("/instances/{id}/crash/dismiss", post(dismiss_crash))
         .route(
             "/modpacks/import",
@@ -463,6 +470,66 @@ async fn claude_open(State(s): State<AppState>, Json(b): Json<OpenBody>) -> R<Va
         Ok(()) => Ok(Json(json!({ "opened": true, "prompt": prompt }))),
         Err(e) => Ok(Json(json!({ "opened": false, "prompt": prompt, "error": format!("{e:#}") }))),
     }
+}
+
+async fn live_status(State(s): State<AppState>, Path(id): Path<String>) -> R<Value> {
+    let i = instances::get(&s.l, &id).await?;
+    let running = s.l.processes.is_running(&launch::game_source(&i.id)).await;
+    let agent = running && live::agent_info(&live::agent_json(&s.l, &i.id)).await.is_ok();
+    let content = live_content::load(&s.l, &i).await;
+    let ids = |kind: &str, slot: i32, reg: &Option<String>| live_content::game_id(kind, slot, reg);
+    Ok(Json(json!({
+        "settings": i.live,
+        "unsupported_reason": live::unsupported_reason(&i),
+        "running": running,
+        "hotswap_connected": agent,
+        "slots_used": { "blocks": content.blocks.iter().filter(|d| d.register_as.is_none()).count(), "items": content.items.iter().filter(|d| d.register_as.is_none()).count(), "total": i.live.slot_count },
+        "blocks": content.blocks.iter().map(|d| json!({ "id": d.id, "name": d.name, "game_id": ids("block", d.slot, &d.register_as), "registered": d.register_as.is_some(), "has_behaviour": d.behaviour.is_some() })).collect::<Vec<_>>(),
+        "items": content.items.iter().map(|d| json!({ "id": d.id, "name": d.name, "game_id": ids("item", d.slot, &d.register_as), "registered": d.register_as.is_some(), "has_behaviour": d.behaviour.is_some() })).collect::<Vec<_>>(),
+    })))
+}
+
+async fn live_block(State(s): State<AppState>, Path(id): Path<String>, Json(b): Json<live_content::BlockInput>) -> R<live_content::BlockDef> {
+    Ok(Json(live_content::define_block(&s.l, &id, b).await?))
+}
+
+async fn live_item(State(s): State<AppState>, Path(id): Path<String>, Json(b): Json<live_content::ItemInput>) -> R<live_content::ItemDef> {
+    Ok(Json(live_content::define_item(&s.l, &id, b).await?))
+}
+
+async fn live_remove(State(s): State<AppState>, Path((id, kind, cid)): Path<(String, String, String)>) -> R<Value> {
+    live_content::remove(&s.l, &id, &kind, &cid).await?;
+    Ok(ok())
+}
+
+#[derive(Deserialize)]
+struct GiveBody {
+    kind: String,
+    id: String,
+    #[serde(default = "one")]
+    count: u32,
+}
+fn one() -> u32 {
+    1
+}
+
+async fn live_give(State(s): State<AppState>, Path(id): Path<String>, Json(b): Json<GiveBody>) -> R<Value> {
+    let gid = live_content::give(&s.l, &id, &b.kind, &b.id, b.count).await?;
+    Ok(Json(json!({ "queued": format!("give @p {gid} {}", b.count) })))
+}
+
+#[derive(Deserialize)]
+struct CommandBody {
+    command: String,
+}
+
+async fn live_command(State(s): State<AppState>, Path(id): Path<String>, Json(b): Json<CommandBody>) -> R<Value> {
+    live_content::queue_command(&s.l, &id, &b.command).await?;
+    Ok(ok())
+}
+
+async fn hotswap_project(State(s): State<AppState>, Path(id): Path<String>) -> R<projects::HotswapResult> {
+    Ok(Json(projects::hotswap(&s.l, &id).await?))
 }
 
 async fn get_crash(State(s): State<AppState>, Path(id): Path<String>) -> R<Option<crash::CrashInfo>> {

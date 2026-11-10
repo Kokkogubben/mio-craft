@@ -164,7 +164,7 @@ pub async fn create(l: &Launcher, req: NewProject) -> Result<ModProject> {
 }
 
 /// A Gradle command for the project with the right JDKs wired in.
-async fn gradle_command(l: &Launcher, p: &ModProject, tasks: &[&str]) -> Result<tokio::process::Command> {
+pub(crate) async fn gradle_command(l: &Launcher, p: &ModProject, tasks: &[&str]) -> Result<tokio::process::Command> {
     let target_jdk = java::ensure_jdk(l, p.toolchain.java_target).await?;
     let gradle_jdk = java::ensure_jdk(l, p.toolchain.gradle_jdk).await?;
     let gradle = crate::gradle::ensure_gradle(l, &p.toolchain.gradle_version).await?;
@@ -175,6 +175,7 @@ async fn gradle_command(l: &Launcher, p: &ModProject, tasks: &[&str]) -> Result<
         .arg("--console=plain")
         .arg(format!("-Porg.gradle.java.installations.paths={},{}", target_jdk.display(), gradle_jdk.display()))
         .arg("-Porg.gradle.java.installations.auto-download=false")
+        .arg(format!("-Pclaude_live_api={}", crate::companion::api_jar(l).display()))
         .args(tasks);
     Ok(cmd)
 }
@@ -237,7 +238,7 @@ pub async fn build(l: &Launcher, id: &str) -> Result<BuildResult> {
 }
 
 /// Run Gradle tasks, streaming output under `source`. Returns the exit status and all lines.
-async fn run_gradle(l: &Launcher, p: &ModProject, tasks: &[&str], source: &str) -> Result<(std::process::ExitStatus, Vec<String>)> {
+pub(crate) async fn run_gradle(l: &Launcher, p: &ModProject, tasks: &[&str], source: &str) -> Result<(std::process::ExitStatus, Vec<String>)> {
     let source = source.to_string();
     let mut cmd = gradle_command(l, p, tasks).await?;
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null()).kill_on_drop(true);
@@ -370,18 +371,28 @@ fn walk_classes(root: &Path) -> Vec<PathBuf> {
 pub async fn hotswap(l: &Launcher, id: &str) -> Result<HotswapResult> {
     let mut p = get(l, id).await?;
     let inst = instances::get(l, &p.instance_id).await?;
-    if !l.processes.is_running(&crate::launch::game_source(&inst.id)).await {
-        bail!("{} isn't running. Launch it with live mode Hotswap on, then try again (or use install_mod while it's closed).", inst.name);
-    }
-    let agent_json = crate::live::agent_json(l, &inst.id);
-    let info = crate::live::agent_info(&agent_json).await?;
-
     let (status, lines) = run_gradle(l, &p, &["classes", "-x", "test"], &format!("build:{id}")).await?;
     let mut result = HotswapResult { compiled: status.success(), errors: vec![], changed: vec![], agent: None, install_queued: false, notes: vec![] };
     if !status.success() {
         result.errors = lines.iter().filter(|x| is_error_line(x)).take(60).cloned().collect();
         return Ok(result);
     }
+    if inst.live.needs_companion() {
+        result.notes.push("Live behaviours used by content slots reload from the compiled classes automatically.".into());
+    }
+    let agent_json = crate::live::agent_json(l, &inst.id);
+    let running = l.processes.is_running(&crate::launch::game_source(&inst.id)).await;
+    let info = match (running, crate::live::agent_info(&agent_json).await) {
+        (true, Ok(info)) => info,
+        (false, _) => {
+            result.notes.push(format!("{} isn't running, so no code was swapped. Launch it with live mode Hotswap on to swap code while playing, or use install_mod.", inst.name));
+            return Ok(result);
+        }
+        (true, Err(_)) => {
+            result.notes.push("The game is running without live Hotswap, so no code was swapped. Turn Hotswap on in the instance's live mode settings and relaunch.".into());
+            return Ok(result);
+        }
+    };
 
     // What the game has: the jar it loaded, plus anything we've sent since.
     let state_file = p.path.join("build").join("launcher-hotswap.json");
