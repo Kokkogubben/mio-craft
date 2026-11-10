@@ -240,6 +240,28 @@ server.registerTool(
     run(() => call("POST", `/instances/${enc(instance_id)}/updates`, { files: file_names })),
 );
 
+server.registerTool(
+  "export_modpack",
+  {
+    description:
+      "Export an instance as a Modrinth modpack (.mrpack). Modrinth mods are linked, Claude-made mods are included; other mods are left out unless include_other_jars is true (only when their licences allow sharing).",
+    inputSchema: {
+      instance_id: z.string(),
+      version: z.string().optional(),
+      include_config: z.boolean().optional(),
+      include_other_jars: z.boolean().optional(),
+    },
+  },
+  async ({ instance_id, version, include_config, include_other_jars }) =>
+    run(() =>
+      call("POST", `/instances/${enc(instance_id)}/export`, {
+        version,
+        include_config: include_config ?? true,
+        include_other_jars: include_other_jars ?? false,
+      }),
+    ),
+);
+
 // ---------- mod projects ----------
 
 server.registerTool(

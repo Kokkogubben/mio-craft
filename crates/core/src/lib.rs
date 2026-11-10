@@ -16,6 +16,7 @@ pub mod java;
 pub mod launch;
 pub mod loaders;
 pub mod maven;
+pub mod modpack;
 pub mod mods;
 pub mod mojang;
 pub mod paths;

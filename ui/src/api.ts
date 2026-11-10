@@ -50,6 +50,19 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
   return data as T;
 }
 
+export async function apiBytes<T = any>(path: string, data: ArrayBuffer): Promise<T> {
+  await connect();
+  const res = await fetch(base() + path, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${info!.token}`, "Content-Type": "application/octet-stream" },
+    body: data,
+  });
+  const text = await res.text();
+  const body = text ? JSON.parse(text) : {};
+  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+  return body as T;
+}
+
 export function events(onEvent: (e: any) => void): EventSource {
   const es = new EventSource(`${base()}/events?token=${encodeURIComponent(info!.token)}`);
   es.onmessage = (m) => {

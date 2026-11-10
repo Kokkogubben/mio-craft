@@ -15,7 +15,12 @@
         </div>
         <div class="side-head">
           <span>Instances</span>
-          <button class="icon-btn" data-action="new-instance" title="New instance" aria-label="New instance">+</button>
+          <span>
+            <button class="icon-btn" data-action="import-pack" title="Import a modpack (.mrpack)" aria-label="Import modpack">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3"/></svg>
+            </button>
+            <button class="icon-btn" data-action="new-instance" title="New instance" aria-label="New instance">+</button>
+          </span>
         </div>
         <nav id="instance-list"></nav>
         <div id="side-foot"></div>
@@ -25,6 +30,7 @@
     <footer id="statusbar"></footer>
     <div id="modal-root"></div>
     <div id="toasts"></div>
+    <input type="file" id="pack-file" accept=".mrpack" hidden />
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

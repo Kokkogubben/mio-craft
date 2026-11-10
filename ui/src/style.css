@@ -1111,3 +1111,26 @@ button.badge {
   background: rgba(106, 190, 80, 0.16);
   color: var(--grass);
 }
+
+.export-sum {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.export-sum li {
+  margin: 3px 0;
+}
+
+.export-sum strong {
+  color: var(--text);
+}
+
+.check + .check {
+  margin-top: 8px;
+}
+
+.side-head > span {
+  display: flex;
+  gap: 2px;
+}

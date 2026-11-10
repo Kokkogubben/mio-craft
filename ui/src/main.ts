@@ -1,4 +1,4 @@
-import { api, connect, enc, events, inTauri, mcpServerPath, openPath, openUrl } from "./api";
+import { api, apiBytes, connect, enc, events, inTauri, mcpServerPath, openPath, openUrl } from "./api";
 
 // ---------- types ----------
 
@@ -252,6 +252,7 @@ function renderMain() {
       <div class="head-actions">
         <button class="btn ghost" data-action="open-path" data-path="${esc(inst.game_dir)}" title="Open the game folder">Folder</button>
         <button class="btn ghost" data-action="instance-menu" title="Instance settings">Edit</button>
+        ${inst.loader !== "vanilla" ? '<button class="btn ghost" data-action="export-pack" title="Share as a Modrinth modpack">Export</button>' : ""}
         <button class="btn ${running ? "danger" : "play"}" data-action="${running ? "stop" : "play"}" ${launching ? "disabled" : ""}>${playLabel}</button>
       </div>
     </header>
@@ -927,6 +928,79 @@ function instanceModal(inst: Instance) {
   });
 }
 
+function exportModal(inst: Instance) {
+  const enabled = S.mods.filter((m) => m.enabled);
+  const linked = enabled.filter((m) => m.online?.source === "modrinth");
+  const claude = enabled.filter((m) => m.claude_project && m.online?.source !== "modrinth");
+  const other = enabled.filter((m) => !linked.includes(m) && !claude.includes(m));
+  openModal(`
+    <h2>Export modpack</h2>
+    <p class="muted small">Creates a Modrinth modpack (.mrpack) of "${esc(inst.name)}" that other launchers can import.</p>
+    <ul class="export-sum">
+      <li><strong>${linked.length}</strong> Modrinth mod${linked.length === 1 ? "" : "s"}, linked (not copied)</li>
+      <li><strong>${claude.length}</strong> mod${claude.length === 1 ? "" : "s"} made by Claude, included in the pack</li>
+      ${other.length ? `<li><strong>${other.length}</strong> other mod${other.length === 1 ? "" : "s"} (CurseForge or added by hand): ${other.map((m) => esc(m.name ?? m.file_name)).join(", ")}</li>` : ""}
+    </ul>
+    <label class="field"><span>Pack version</span><input id="ex-ver" class="input" value="1.0.0"/></label>
+    <label class="check"><input type="checkbox" id="ex-cfg" checked/> Include mod settings (config folder)</label>
+    ${other.length ? `<label class="check"><input type="checkbox" id="ex-other"/> Also include the ${other.length} other mod${other.length === 1 ? "" : "s"}. Only do this if their licences allow sharing.</label>` : ""}
+    <div class="modal-actions">
+      <button class="btn ghost" data-action="close-modal">Cancel</button>
+      <button class="btn primary" id="ex-go">Export</button>
+    </div>`);
+  $("#ex-go").addEventListener("click", async () => {
+    const btn = $<HTMLButtonElement>("#ex-go");
+    btn.disabled = true;
+    btn.textContent = "Exporting…";
+    try {
+      const r = await api<{ path: string; linked: string[]; embedded: string[]; left_out: string[] }>("POST", `/instances/${enc(inst.id)}/export`, {
+        version: $<HTMLInputElement>("#ex-ver").value,
+        include_config: $<HTMLInputElement>("#ex-cfg").checked,
+        include_other_jars: document.querySelector<HTMLInputElement>("#ex-other")?.checked ?? false,
+      });
+      const folder = r.path.replace(/[\\/][^\\/]+$/, "");
+      openModal(`
+        <h2>Modpack exported</h2>
+        <button class="path" data-action="open-path" data-path="${esc(folder)}">${esc(r.path)}</button>
+        <p class="muted small">${r.linked.length} linked · ${r.embedded.length} included${r.left_out.length ? ` · ${r.left_out.length} left out` : ""}</p>
+        ${r.left_out.length ? `<p class="small">Left out, so players need to add these themselves:</p><ul class="export-sum small">${r.left_out.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+        <div class="modal-actions">
+          <button class="btn ghost" data-action="close-modal">Close</button>
+          <button class="btn primary" data-action="open-path" data-path="${esc(folder)}">Show in folder</button>
+        </div>`);
+    } catch (e) {
+      toast((e as Error).message, "err");
+      btn.disabled = false;
+      btn.textContent = "Export";
+    }
+  });
+}
+
+$<HTMLInputElement>("#pack-file").addEventListener("change", async (ev) => {
+  const input = ev.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  openModal(`<h2>Importing ${esc(file.name)}</h2><p class="muted"><span class="spinner"></span> Downloading the pack's mods…</p>`);
+  try {
+    const r = await apiBytes<{ instance: Instance; downloaded: number; override_files: number; warnings: string[] }>("/modpacks/import", await file.arrayBuffer());
+    closeModal();
+    S.selected = r.instance.id;
+    S.tab = "mods";
+    await loadInstances();
+    toast(`Imported ${r.instance.name} (${r.downloaded} downloads, ${r.override_files} included files)`);
+    r.warnings.forEach((w) => toast(w, "err"));
+    busy(`launch:${r.instance.id}`, async () => {
+      await api("POST", `/instances/${enc(r.instance.id)}/install`);
+      toast(`${r.instance.name} is installed`);
+      await loadInstances();
+    });
+  } catch (e) {
+    closeModal();
+    toast((e as Error).message, "err");
+  }
+});
+
 // ---------- actions ----------
 
 document.addEventListener("click", async (ev) => {
@@ -1031,6 +1105,12 @@ document.addEventListener("click", async (ev) => {
       busy(`mod:${file}`, () => api("DELETE", `/instances/${enc(inst.id)}/mods/${enc(file)}`));
       break;
     }
+    case "import-pack":
+      $<HTMLInputElement>("#pack-file").click();
+      break;
+    case "export-pack":
+      if (inst) exportModal(inst);
+      break;
     case "check-updates":
       checkUpdates();
       break;

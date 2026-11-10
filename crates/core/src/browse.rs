@@ -16,7 +16,7 @@ use crate::{mods, Event, Launcher};
 pub const MODRINTH_API: &str = "https://api.modrinth.com/v2";
 
 /// Overridable for tests.
-fn modrinth_api() -> String {
+pub fn modrinth_api() -> String {
     std::env::var("CLAUDE_LAUNCHER_MODRINTH_API").unwrap_or_else(|_| MODRINTH_API.to_string())
 }
 pub const CURSEFORGE_API: &str = "https://api.curseforge.com/v1";
@@ -135,7 +135,7 @@ pub async fn load_tags(l: &Launcher, instance_id: &str) -> OnlineTags {
     http::read_json(&tags_file(l, instance_id)).await.unwrap_or_default()
 }
 
-async fn save_tags(l: &Launcher, instance_id: &str, t: &OnlineTags) -> Result<()> {
+pub async fn save_tags(l: &Launcher, instance_id: &str, t: &OnlineTags) -> Result<()> {
     http::write_json(&tags_file(l, instance_id), t).await
 }
 
@@ -778,7 +778,7 @@ pub async fn apply_updates(l: &Launcher, instance_id: &str, files: Option<Vec<St
     Ok(report)
 }
 
-fn urlencode(s: &str) -> String {
+pub fn urlencode(s: &str) -> String {
     let mut out = String::new();
     for b in s.bytes() {
         match b {

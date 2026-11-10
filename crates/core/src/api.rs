@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, config, instances, launch, loaders, mods, mojang, process, projects, Launcher};
+use crate::{auth, browse, config, modpack, instances, launch, loaders, mods, mojang, process, projects, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -94,6 +94,11 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}/mods/{file}/enabled", post(set_mod_enabled))
         .route("/instances/{id}/online-mods", post(install_online))
         .route("/instances/{id}/updates", get(check_updates).post(apply_updates))
+        .route("/instances/{id}/export", post(export_pack))
+        .route(
+            "/modpacks/import",
+            post(import_pack).layer(axum::extract::DefaultBodyLimit::max(1024 * 1024 * 1024)),
+        )
         .route("/browse/{source}/search", get(browse_search))
         .route("/browse/{source}/projects/{pid}/versions", get(browse_versions))
         .route("/projects", get(list_projects).post(create_project))
@@ -378,6 +383,17 @@ struct UpdateBody {
 async fn apply_updates(State(s): State<AppState>, Path(id): Path<String>, body: Option<Json<UpdateBody>>) -> R<browse::InstallReport> {
     let b = body.map(|b| b.0).unwrap_or_default();
     Ok(Json(browse::apply_updates(&s.l, &id, b.files).await?))
+}
+
+async fn import_pack(State(s): State<AppState>, body: axum::body::Bytes) -> R<modpack::ImportReport> {
+    if body.is_empty() {
+        return Err(anyhow::anyhow!("send the .mrpack file as the request body").into());
+    }
+    Ok(Json(modpack::import(&s.l, body.to_vec()).await?))
+}
+
+async fn export_pack(State(s): State<AppState>, Path(id): Path<String>, body: Option<Json<modpack::ExportOptions>>) -> R<modpack::ExportReport> {
+    Ok(Json(modpack::export(&s.l, &id, body.map(|b| b.0).unwrap_or_default()).await?))
 }
 
 async fn list_projects(State(s): State<AppState>) -> R<Vec<projects::ModProject>> {
