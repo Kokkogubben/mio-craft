@@ -285,6 +285,7 @@ async fn minecraft_from_ms(l: &Launcher, ms_access: &str, refresh: String) -> Re
     if resp.status().as_u16() == 401 {
         let body: serde_json::Value = resp.json().await.unwrap_or_default();
         let msg = match body["XErr"].as_u64() {
+            Some(2148916227) => "This account is banned from Xbox Live.",
             Some(2148916233) => "This Microsoft account has no Xbox profile. Sign in once at minecraft.net to create one.",
             Some(2148916235) => "Xbox Live is not available in your country.",
             Some(2148916236) | Some(2148916237) => "This account needs adult verification on the Xbox website.",

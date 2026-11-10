@@ -244,24 +244,12 @@ box confirming you're allowed to share them.
 ## Privacy
 
 MioCraft has no telemetry, analytics or accounts of its own, and nothing is
-sent to the author. It only talks to the services it needs:
+sent to the author. It only contacts the services it needs (Mojang, the mod
+loaders, Modrinth, CurseForge if you add a key, and Microsoft for sign-in). You
+sign in on Microsoft's own page, so MioCraft never sees your password, and the
+sign-in tokens are kept in Windows Credential Manager.
 
-| Service | When | What is sent |
-|---|---|---|
-| Mojang (`piston-meta.mojang.com`, `resources.download.minecraft.net`, `libraries.minecraft.net`) | Listing versions, installing an instance | Download requests |
-| Fabric, NeoForge, Adoptium, JetBrains, Gradle | Installing a loader, Java or build tools | Download requests |
-| Modrinth | Using the mod browser, updates, modpack import | Your search text, the instance's Minecraft version and loader, and which browser-installed mods to check for updates. Imported modpacks may also download files from GitHub or GitLab |
-| CurseForge | Only if you add an API key | The same, plus your API key |
-| Microsoft, Xbox Live, Minecraft services | Signing in and refreshing the session | The sign-in tokens Microsoft's login flow requires |
-| `mc-heads.net` | Showing your player head once signed in | Your Minecraft account UUID |
-
-Sign-in tokens are stored in Windows Credential Manager. The Azure client ID and
-CurseForge API key you enter are stored in `config.json` in the data folder. The
-local API only listens on `127.0.0.1` and requires a random token that changes
-every time the launcher starts.
-
-Claude Code is a separate program you install yourself; what it sends to
-Anthropic is covered by its own terms, not by MioCraft.
+The full details are in the [privacy policy](PRIVACY.md).
 
 ## Legal
 
