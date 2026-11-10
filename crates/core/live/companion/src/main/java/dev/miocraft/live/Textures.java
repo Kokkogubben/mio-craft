@@ -1,4 +1,4 @@
-package dev.claudelauncher.live;
+package dev.miocraft.live;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;

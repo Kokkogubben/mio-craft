@@ -1,4 +1,4 @@
-# Claude Launcher
+# MioCraft
 
 A lightweight Minecraft launcher for Windows with Claude Code built in. Ask
 Claude Code for a mod and it creates the project, writes the code, builds it and
@@ -35,7 +35,7 @@ the core serves a local API on `127.0.0.1`, protected by a random token. It
 writes the port and token to `api.json` in the data folder, which is how the MCP
 server finds it.
 
-Data lives in `%APPDATA%\ClaudeLauncher`:
+Data lives in `%APPDATA%\MioCraft`:
 
 ```
 instances/<id>/minecraft/      game folder (mods/, saves/, logs/ …)
@@ -72,7 +72,7 @@ launcher, go to **Settings → Connect Claude Code** and press **Connect
 automatically**. Or run the command it shows, which looks like this:
 
 ```
-claude mcp add --scope user claude-launcher -- node "C:\Program Files\Claude Launcher\mcp\claude-launcher-mcp.mjs"
+claude mcp add --scope user mio-craft -- node "C:\Program Files\MioCraft\mcp\mio-craft-mcp.mjs"
 ```
 
 Keep the launcher open while Claude Code works. Then ask something like:
@@ -103,7 +103,7 @@ need to sign in with a Microsoft account that owns Minecraft: Java Edition.
 Microsoft requires every third-party launcher to use its own Azure app:
 
 1. Go to [portal.azure.com](https://portal.azure.com) → **App registrations** → **New registration**.
-2. Name it (e.g. "Claude Launcher"). For supported account types choose **Personal Microsoft accounts only**.
+2. Name it (e.g. "MioCraft"). For supported account types choose **Personal Microsoft accounts only**.
 3. Leave the redirect URI empty and register.
 4. In **Authentication**, set **Allow public client flows** to **Yes** and save.
 5. Copy the **Application (client) ID** and paste it into the launcher's **Settings → Azure client ID**.
@@ -148,7 +148,7 @@ cargo run -p launcher-core --bin launcher-headless  # the core without a window
 cd ui && npx vite                                   # then open http://localhost:5173/?port=<port>&token=<token> from api.json
 ```
 
-Set `CLAUDE_LAUNCHER_HOME` to use a separate data folder while developing (both
+Set `MIO_CRAFT_HOME` to use a separate data folder while developing (both
 the core and the MCP server respect it).
 
 See [NOTES-FOR-CLAUDE-CODE.md](NOTES-FOR-CLAUDE-CODE.md) for what still needs
@@ -173,7 +173,7 @@ slot count is fixed per session, and content keeps the slot's id
 companion mod, so blocks placed from slots disappear from worlds.
 
 The companion mod is generated and built by the launcher the first time live
-content is enabled (`%APPDATA%\ClaudeLauncher\live`), and installed or
+content is enabled (`%APPDATA%\MioCraft\live`), and installed or
 removed at each launch to match the toggles. It also installs Fabric API, which
 it needs.
 

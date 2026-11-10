@@ -3,7 +3,7 @@ name = "launcher-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Core of Claude Launcher: Minecraft installs, launching, mod projects and the local control API"
+description = "Core of MioCraft: Minecraft installs, launching, mod projects and the local control API"
 
 [lib]
 name = "launcher_core"

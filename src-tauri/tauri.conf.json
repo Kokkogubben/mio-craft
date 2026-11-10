@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Claude Launcher",
+  "productName": "MioCraft",
   "version": "0.1.0",
-  "identifier": "com.claudelauncher.app",
+  "identifier": "com.miocraft.app",
   "build": {
     "frontendDist": "../ui/dist",
     "devUrl": "http://localhost:5173",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Claude Launcher",
+        "title": "MioCraft",
         "width": 1120,
         "height": 740,
         "minWidth": 880,
@@ -28,7 +28,7 @@
     "targets": ["nsis", "msi"],
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
     "resources": {
-      "../mcp/dist/claude-launcher-mcp.mjs": "mcp/claude-launcher-mcp.mjs"
+      "../mcp/dist/mio-craft-mcp.mjs": "mcp/mio-craft-mcp.mjs"
     },
     "windows": {
       "nsis": { "installMode": "currentUser" }

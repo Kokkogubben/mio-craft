@@ -130,7 +130,7 @@ pub async fn create(l: &Launcher, req: NewProject) -> Result<ModProject> {
         mod_id: mod_id.clone(),
         name: name.clone(),
         description: req.description.clone().unwrap_or_default(),
-        author: req.author.unwrap_or_else(|| "Claude Launcher user".into()),
+        author: req.author.unwrap_or_else(|| "MioCraft user".into()),
         mc_version: inst.mc_version.clone(),
         loader: inst.loader,
         loader_version: loader_version.clone(),

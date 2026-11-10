@@ -38,7 +38,7 @@ fn open_url(url: String) -> Result<(), String> {
 fn mcp_server_path(app: tauri::AppHandle) -> Result<String, String> {
     let p = app
         .path()
-        .resolve("mcp/claude-launcher-mcp.mjs", tauri::path::BaseDirectory::Resource)
+        .resolve("mcp/mio-craft-mcp.mjs", tauri::path::BaseDirectory::Resource)
         .map_err(|e| e.to_string())?;
     // Strip Windows' verbatim prefix so the path pastes cleanly into a terminal.
     let s = p.to_string_lossy().to_string();
@@ -66,7 +66,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![get_api, open_path, open_url, mcp_server_path, data_dir])
         .build(tauri::generate_context!())
-        .expect("error while building Claude Launcher")
+        .expect("error while building MioCraft")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 // Tell the MCP server we're gone.

@@ -20,7 +20,7 @@ const FABRIC_API_MODRINTH: &str = "P7dR8mSH";
 
 macro_rules! sources {
     ($($path:literal),* $(,)?) => {
-        &[$(($path, include_str!(concat!("../live/companion/src/main/java/dev/claudelauncher/live/", $path)))),*]
+        &[$(($path, include_str!(concat!("../live/companion/src/main/java/dev/miocraft/live/", $path)))),*]
     };
 }
 
@@ -114,13 +114,13 @@ fn fabric_mod_json(spec: &ModSpec) -> String {
         "id": "claude_live",
         "version": "1.0.0",
         "name": "Claude Live",
-        "description": "Claude Launcher's live mode: content slots, live textures and hotswap support.",
-        "authors": ["Claude Launcher"],
+        "description": "MioCraft's live mode: content slots, live textures and hotswap support.",
+        "authors": ["MioCraft"],
         "license": "MIT",
         "environment": "*",
         "entrypoints": {
-            "main": ["dev.claudelauncher.live.ClaudeLive"],
-            "client": ["dev.claudelauncher.live.ClaudeLiveClient"]
+            "main": ["dev.miocraft.live.ClaudeLive"],
+            "client": ["dev.miocraft.live.ClaudeLiveClient"]
         },
         "mixins": ["claude_live.mixins.json"],
         "depends": {
@@ -134,7 +134,7 @@ fn fabric_mod_json(spec: &ModSpec) -> String {
 
 const MIXINS_JSON: &str = r#"{
   "required": false,
-  "package": "dev.claudelauncher.live.mixin",
+  "package": "dev.miocraft.live.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": ["MappedRegistryAccessor", "HolderReferenceInvoker"],
   "injectors": { "defaultRequire": 0 }
@@ -146,7 +146,7 @@ pub fn render(spec: &ModSpec) -> (BTreeMap<String, String>, BTreeMap<String, Vec
     let mut f = templates::render(spec);
     // Drop the template's example main class and metadata; ours replace them.
     f.retain(|k, _| !k.starts_with("src/main/java/") && k != "src/main/resources/fabric.mod.json" && k != "CLAUDE.md");
-    let base = "src/main/java/dev/claudelauncher/live/";
+    let base = "src/main/java/dev/miocraft/live/";
     for (path, src) in JAVA_SOURCES {
         f.insert(format!("{base}{path}"), src.to_string());
     }
@@ -222,7 +222,7 @@ pub async fn ensure_built(l: &Launcher, inst: &Instance) -> Result<PathBuf> {
         mod_id: "claude_live".into(),
         name: "Claude Live".into(),
         description: String::new(),
-        author: "Claude Launcher".into(),
+        author: "MioCraft".into(),
         mc_version: inst.mc_version.clone(),
         loader: Loader::Fabric,
         loader_version: loader_version.clone(),
@@ -339,10 +339,10 @@ mod tests {
             toolchain: templates::toolchain(Loader::Fabric, "26.1", 25, None).unwrap(),
         };
         let (text, bin) = render(&spec);
-        assert!(text.contains_key("src/main/java/dev/claudelauncher/live/ClaudeLive.java"));
+        assert!(text.contains_key("src/main/java/dev/miocraft/live/ClaudeLive.java"));
         assert!(!text.keys().any(|k| k.contains("com/claudemods")), "template example class removed");
         let fmj: serde_json::Value = serde_json::from_str(&text["src/main/resources/fabric.mod.json"]).unwrap();
-        assert_eq!(fmj["entrypoints"]["client"][0], "dev.claudelauncher.live.ClaudeLiveClient");
+        assert_eq!(fmj["entrypoints"]["client"][0], "dev.miocraft.live.ClaudeLiveClient");
         let bs: serde_json::Value = serde_json::from_str(&text["src/main/resources/assets/claude_live/blockstates/slot_block_255.json"]).unwrap();
         assert_eq!(bs["multipart"][0]["apply"]["model"], "claude_live:block/slot_block_255");
         assert_eq!(bin.len(), (MAX_SLOTS * 2) as usize);

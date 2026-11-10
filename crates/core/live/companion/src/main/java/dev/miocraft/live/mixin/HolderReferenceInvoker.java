@@ -1,4 +1,4 @@
-package dev.claudelauncher.live.mixin;
+package dev.miocraft.live.mixin;
 
 import java.util.Collection;
 

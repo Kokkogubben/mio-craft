@@ -1,4 +1,4 @@
-package dev.claudelauncher.live.api;
+package dev.miocraft.live.api;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.InteractionResult;

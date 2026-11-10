@@ -1,4 +1,4 @@
-//! Claude Launcher core.
+//! MioCraft core.
 //!
 //! Everything the launcher does lives here so that the desktop app, the
 //! headless binary and the local control API (used by the MCP server) all

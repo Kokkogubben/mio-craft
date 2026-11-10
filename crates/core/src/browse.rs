@@ -17,7 +17,7 @@ pub const MODRINTH_API: &str = "https://api.modrinth.com/v2";
 
 /// Overridable for tests.
 pub fn modrinth_api() -> String {
-    std::env::var("CLAUDE_LAUNCHER_MODRINTH_API").unwrap_or_else(|_| MODRINTH_API.to_string())
+    std::env::var("MIO_CRAFT_MODRINTH_API").unwrap_or_else(|_| MODRINTH_API.to_string())
 }
 pub const CURSEFORGE_API: &str = "https://api.curseforge.com/v1";
 const CF_MINECRAFT: u32 = 432;
@@ -877,7 +877,7 @@ mod tests {
                 async move { if n == "glow.jar" { m } else { d } }
             }));
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        std::env::set_var("CLAUDE_LAUNCHER_MODRINTH_API", &base);
+        std::env::set_var("MIO_CRAFT_MODRINTH_API", &base);
 
         let dir = tempfile::tempdir().unwrap();
         let l = Launcher::new(crate::Paths::new(dir.path())).await.unwrap();

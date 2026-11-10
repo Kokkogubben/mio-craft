@@ -1,6 +1,6 @@
-package dev.claudelauncher.live;
+package dev.miocraft.live;
 
-import dev.claudelauncher.live.api.LiveItemBehaviour;
+import dev.miocraft.live.api.LiveItemBehaviour;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;

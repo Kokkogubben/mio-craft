@@ -875,13 +875,13 @@ async function settingsModal() {
           ? `<p class="muted small">The launcher's MCP server needs Node.js. <button class="link" data-action="open-url" data-url="https://nodejs.org/">Install Node.js LTS</button>, then reopen Settings.</p>`
           : `<p><button class="btn primary small" data-action="connect-claude" ${inTauri ? "" : "disabled"}>Connect automatically</button></p>`;
   const status = await api("GET", "/status");
-  const cmd = `claude mcp add --scope user claude-launcher -- node "${path}"`;
+  const cmd = `claude mcp add --scope user mio-craft -- node "${path}"`;
   openModal(`
     <h2>Settings</h2>
     <section class="settings-sec">
       <h3>✦ Connect Claude Code</h3>
       ${ccLine}
-      <p class="muted small">${cc?.connected ? "To connect it manually, run" : "Or run this once in a terminal"}. Claude Launcher needs to be open while Claude Code uses it.</p>
+      <p class="muted small">${cc?.connected ? "To connect it manually, run" : "Or run this once in a terminal"}. MioCraft needs to be open while Claude Code uses it.</p>
       <div class="copy"><code id="mcp-cmd">${esc(cmd)}</code><button class="btn small" data-copy="${esc(cmd)}">Copy</button></div>
       <p class="muted small">Then ask Claude Code something like "make a Fabric mod for my instance that adds a ruby ore".</p>
     </section>
@@ -1095,7 +1095,7 @@ async function setupModal(step = 0) {
   if (name === "welcome") {
     body = `
       <div class="setup-hero"><img src="/icon.png" alt="" width="64" height="64"/></div>
-      <h2 class="center">Welcome to Claude Launcher</h2>
+      <h2 class="center">Welcome to MioCraft</h2>
       <p class="center muted">Play Minecraft with Fabric or NeoForge, browse Modrinth and CurseForge, and have Claude Code build mods for you.</p>
       <p class="center muted small">Setup takes about a minute. You can change everything later in Settings.</p>
       ${nav("Get started", { back: false })}`;

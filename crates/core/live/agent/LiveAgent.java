@@ -1,4 +1,4 @@
-package dev.claudelauncher.agent;
+package dev.miocraft.agent;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Claude Launcher's hotswap agent. Loaded with
+ * MioCraft's hotswap agent. Loaded with
  * {@code -javaagent:claude-live-agent.jar=<path to agent.json>}.
  *
  * <p>It listens on a random localhost port (written to agent.json with a random
@@ -82,9 +82,9 @@ public final class LiveAgent {
             Thread t = new Thread(() -> serve(server), "claude-live-agent");
             t.setDaemon(true);
             t.start();
-            System.out.println("[Claude Launcher] live agent listening on port " + server.getLocalPort());
+            System.out.println("[MioCraft] live agent listening on port " + server.getLocalPort());
         } catch (IOException e) {
-            System.err.println("[Claude Launcher] live agent failed to start: " + e);
+            System.err.println("[MioCraft] live agent failed to start: " + e);
         }
     }
 
@@ -121,7 +121,7 @@ public final class LiveAgent {
                 out.flush();
             } catch (Throwable e) {
                 // Keep serving; a bad request must never take the game down.
-                System.err.println("[Claude Launcher] live agent request failed: " + e);
+                System.err.println("[MioCraft] live agent request failed: " + e);
             }
         }
     }

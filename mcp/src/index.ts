@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Claude Launcher MCP server (stdio). Add it to Claude Code with:
-//   claude mcp add claude-launcher -- node "<path>/claude-launcher-mcp.mjs"
+// MioCraft MCP server (stdio). Add it to Claude Code with:
+//   claude mcp add mio-craft -- node "<path>/mio-craft-mcp.mjs"
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -9,10 +9,10 @@ import { z } from "zod";
 import { call, enc } from "./client.js";
 
 const server = new McpServer(
-  { name: "claude-launcher", version: "0.1.0" },
+  { name: "mio-craft", version: "0.1.0" },
   {
     instructions: [
-      "Tools for making Minecraft mods with Claude Launcher.",
+      "Tools for making Minecraft mods with MioCraft.",
       "Typical flow: list_instances (or create_instance) → create_mod → edit the files in the returned path",
       "(read its CLAUDE.md first) → build_mod and fix any errors → install_mod so it appears in the launcher's",
       "mod list → run_dev_client to test offline, read_dev_log to check output → stop_dev_client.",
@@ -61,7 +61,7 @@ function formatBuild(r: BuildResult, verb: string): string {
 server.registerTool(
   "launcher_status",
   {
-    description: "Check that Claude Launcher is running; shows its data folder, running processes and sign-in state.",
+    description: "Check that MioCraft is running; shows its data folder, running processes and sign-in state.",
     inputSchema: {},
   },
   async () => run(() => call("GET", "/status")),
@@ -391,7 +391,7 @@ server.registerTool(
 const behaviourSchema = z
   .object({
     project_id: z.string().describe("Mod project whose compiled classes contain the behaviour"),
-    class_name: z.string().describe("Fully qualified class implementing dev.claudelauncher.live.api.LiveBlockBehaviour / LiveItemBehaviour"),
+    class_name: z.string().describe("Fully qualified class implementing dev.miocraft.live.api.LiveBlockBehaviour / LiveItemBehaviour"),
   })
   .optional();
 

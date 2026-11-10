@@ -1,12 +1,12 @@
 [package]
-name = "claude-launcher"
+name = "mio-craft"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "A lightweight Minecraft launcher that Claude Code can build mods for"
 
 [lib]
-name = "claude_launcher_lib"
+name = "mio_craft_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

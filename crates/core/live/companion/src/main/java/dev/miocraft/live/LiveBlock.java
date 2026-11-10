@@ -1,9 +1,9 @@
-package dev.claudelauncher.live;
+package dev.miocraft.live;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import dev.claudelauncher.live.api.LiveBlockBehaviour;
+import dev.miocraft.live.api.LiveBlockBehaviour;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;

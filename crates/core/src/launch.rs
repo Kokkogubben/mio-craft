@@ -138,7 +138,7 @@ pub async fn plan(
     vars.insert("user_properties", "{}".into());
     vars.insert("version_type", v.kind.clone().unwrap_or_else(|| "release".into()));
     vars.insert("natives_directory", natives_dir.to_string_lossy().into());
-    vars.insert("launcher_name", "claude-launcher".into());
+    vars.insert("launcher_name", "mio-craft".into());
     vars.insert("launcher_version", env!("CARGO_PKG_VERSION").into());
     vars.insert("classpath", cp.join(sep));
     vars.insert("classpath_separator", sep.into());

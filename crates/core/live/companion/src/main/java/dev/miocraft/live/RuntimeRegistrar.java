@@ -1,12 +1,12 @@
-package dev.claudelauncher.live;
+package dev.miocraft.live;
 
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
-import dev.claudelauncher.live.mixin.HolderReferenceInvoker;
-import dev.claudelauncher.live.mixin.MappedRegistryAccessor;
+import dev.miocraft.live.mixin.HolderReferenceInvoker;
+import dev.miocraft.live.mixin.MappedRegistryAccessor;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;

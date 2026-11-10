@@ -1,4 +1,4 @@
-# Claude Launcher
+# MioCraft
 
 Minecraft launcher (Tauri 2 + TypeScript) with an MCP server so Claude Code can build mods.
 

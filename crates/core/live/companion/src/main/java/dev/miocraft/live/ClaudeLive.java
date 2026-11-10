@@ -1,4 +1,4 @@
-package dev.claudelauncher.live;
+package dev.miocraft.live;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,14 +26,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Claude Launcher's live companion mod.
+ * MioCraft's live companion mod.
  *
  * <p>Configured by the launcher through system properties:
  * <ul>
- *   <li>{@code claudelauncher.live.dir} — folder with {@code content.json} and textures</li>
- *   <li>{@code claudelauncher.live.slots} — number of block and item slots (route 3)</li>
- *   <li>{@code claudelauncher.live.inMemoryTextures} — paint textures into the atlas</li>
- *   <li>{@code claudelauncher.live.unfreeze} — allow registering real content at runtime (route 4)</li>
+ *   <li>{@code miocraft.live.dir} — folder with {@code content.json} and textures</li>
+ *   <li>{@code miocraft.live.slots} — number of block and item slots (route 3)</li>
+ *   <li>{@code miocraft.live.inMemoryTextures} — paint textures into the atlas</li>
+ *   <li>{@code miocraft.live.unfreeze} — allow registering real content at runtime (route 4)</li>
  * </ul>
  *
  * <p>Calls marked {@code VERIFY(26.x)} were written without being able to
@@ -43,10 +43,10 @@ public final class ClaudeLive implements ModInitializer {
     public static final String MOD_ID = "claude_live";
     public static final Logger LOG = LoggerFactory.getLogger("Claude Live");
 
-    public static final Path DIR = Paths.get(System.getProperty("claudelauncher.live.dir", "claude-live"));
-    public static final int SLOTS = Integer.getInteger("claudelauncher.live.slots", 0);
-    public static final boolean IN_MEMORY_TEXTURES = Boolean.getBoolean("claudelauncher.live.inMemoryTextures");
-    public static final boolean UNFREEZE = Boolean.getBoolean("claudelauncher.live.unfreeze");
+    public static final Path DIR = Paths.get(System.getProperty("miocraft.live.dir", "claude-live"));
+    public static final int SLOTS = Integer.getInteger("miocraft.live.slots", 0);
+    public static final boolean IN_MEMORY_TEXTURES = Boolean.getBoolean("miocraft.live.inMemoryTextures");
+    public static final boolean UNFREEZE = Boolean.getBoolean("miocraft.live.unfreeze");
 
     public static final List<LiveBlock> BLOCKS = new ArrayList<>();
     public static final List<LiveItem> ITEMS = new ArrayList<>();

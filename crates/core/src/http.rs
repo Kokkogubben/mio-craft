@@ -11,7 +11,7 @@ use tokio::io::AsyncWriteExt;
 
 use crate::Launcher;
 
-pub const USER_AGENT: &str = concat!("ClaudeLauncher/", env!("CARGO_PKG_VERSION"));
+pub const USER_AGENT: &str = concat!("MioCraft/", env!("CARGO_PKG_VERSION"));
 
 pub fn client() -> Result<reqwest::Client> {
     Ok(reqwest::Client::builder()

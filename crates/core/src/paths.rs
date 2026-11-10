@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 
 /// Folder layout under the launcher's data directory
-/// (`%APPDATA%\ClaudeLauncher` on Windows).
+/// (`%APPDATA%\MioCraft` on Windows).
 #[derive(Debug, Clone)]
 pub struct Paths {
     pub root: PathBuf,
@@ -15,12 +15,12 @@ impl Paths {
     }
 
     pub fn default_root() -> PathBuf {
-        if let Ok(p) = std::env::var("CLAUDE_LAUNCHER_HOME") {
+        if let Ok(p) = std::env::var("MIO_CRAFT_HOME") {
             return PathBuf::from(p);
         }
         dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("ClaudeLauncher")
+            .join("MioCraft")
     }
 
     pub async fn ensure_dirs(&self) -> Result<()> {

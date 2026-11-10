@@ -1,4 +1,4 @@
-package dev.claudelauncher.live;
+package dev.miocraft.live;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

@@ -57,10 +57,10 @@ pub fn host_allowed(url: &str) -> bool {
 pub fn pack_target(deps: &HashMap<String, String>) -> Result<(String, Loader, Option<String>)> {
     let mc = deps.get("minecraft").cloned().ok_or_else(|| anyhow!("the pack doesn't say which Minecraft version it's for"))?;
     if deps.contains_key("forge") {
-        bail!("this pack uses Forge; Claude Launcher supports Fabric and NeoForge packs");
+        bail!("this pack uses Forge; MioCraft supports Fabric and NeoForge packs");
     }
     if deps.contains_key("quilt-loader") {
-        bail!("this pack uses Quilt; Claude Launcher supports Fabric and NeoForge packs");
+        bail!("this pack uses Quilt; MioCraft supports Fabric and NeoForge packs");
     }
     if let Some(v) = deps.get("fabric-loader") {
         return Ok((mc, Loader::Fabric, Some(v.clone())));
@@ -342,7 +342,7 @@ pub async fn export(l: &Launcher, instance_id: &str, opts: ExportOptions) -> Res
         game: "minecraft".into(),
         version_id: version.clone(),
         name: inst.name.clone(),
-        summary: Some(format!("Exported from Claude Launcher ({} {})", inst.mc_version, inst.loader.as_str())),
+        summary: Some(format!("Exported from MioCraft ({} {})", inst.mc_version, inst.loader.as_str())),
         files,
         dependencies: deps,
     };

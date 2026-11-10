@@ -10,7 +10,7 @@ use std::sync::Mutex;
 
 use anyhow::{anyhow, Result};
 
-const SERVICE: &str = "ClaudeLauncher";
+const SERVICE: &str = "MioCraft";
 
 /// In-memory store used instead of the OS store in tests.
 static MEMORY: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);

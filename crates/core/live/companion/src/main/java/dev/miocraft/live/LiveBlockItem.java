@@ -1,4 +1,4 @@
-package dev.claudelauncher.live;
+package dev.miocraft.live;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.BlockItem;

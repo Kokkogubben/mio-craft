@@ -1,14 +1,14 @@
 {
-  "name": "claude-launcher-mcp",
+  "name": "mio-craft-mcp",
   "version": "0.1.0",
-  "description": "MCP server that lets Claude Code create, build and install Minecraft mods through Claude Launcher",
+  "description": "MCP server that lets Claude Code create, build and install Minecraft mods through MioCraft",
   "type": "module",
   "private": true,
-  "bin": { "claude-launcher-mcp": "dist/claude-launcher-mcp.mjs" },
+  "bin": { "mio-craft-mcp": "dist/mio-craft-mcp.mjs" },
   "scripts": {
-    "build": "tsc --noEmit && esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist/claude-launcher-mcp.mjs --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
+    "build": "tsc --noEmit && esbuild src/index.ts --bundle --platform=node --target=node18 --format=esm --outfile=dist/mio-craft-mcp.mjs --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
     "typecheck": "tsc --noEmit",
-    "start": "node dist/claude-launcher-mcp.mjs"
+    "start": "node dist/mio-craft-mcp.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0",

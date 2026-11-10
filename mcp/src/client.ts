@@ -1,4 +1,4 @@
-// Thin client for Claude Launcher's local API. The launcher writes its port
+// Thin client for MioCraft's local API. The launcher writes its port
 // and token to `api.json` in its data folder each time it starts.
 
 import { readFile } from "node:fs/promises";
@@ -13,14 +13,14 @@ export interface ApiInfo {
 }
 
 export function dataDir(): string {
-  if (process.env.CLAUDE_LAUNCHER_HOME) return process.env.CLAUDE_LAUNCHER_HOME;
+  if (process.env.MIO_CRAFT_HOME) return process.env.MIO_CRAFT_HOME;
   if (process.platform === "win32") {
-    return join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "ClaudeLauncher");
+    return join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "MioCraft");
   }
   if (process.platform === "darwin") {
-    return join(homedir(), "Library", "Application Support", "ClaudeLauncher");
+    return join(homedir(), "Library", "Application Support", "MioCraft");
   }
-  return join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "ClaudeLauncher");
+  return join(process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"), "MioCraft");
 }
 
 export class LauncherNotRunning extends Error {}
@@ -31,7 +31,7 @@ async function apiInfo(): Promise<ApiInfo> {
     return JSON.parse(await readFile(file, "utf8")) as ApiInfo;
   } catch {
     throw new LauncherNotRunning(
-      `Claude Launcher doesn't seem to be running (no ${file}). Ask the user to open Claude Launcher, then try again.`,
+      `MioCraft doesn't seem to be running (no ${file}). Ask the user to open MioCraft, then try again.`,
     );
   }
 }
@@ -54,7 +54,7 @@ export async function call<T = unknown>(
     });
   } catch {
     throw new LauncherNotRunning(
-      "Couldn't reach Claude Launcher. Ask the user to open (or restart) Claude Launcher, then try again.",
+      "Couldn't reach MioCraft. Ask the user to open (or restart) MioCraft, then try again.",
     );
   }
   const text = await res.text();

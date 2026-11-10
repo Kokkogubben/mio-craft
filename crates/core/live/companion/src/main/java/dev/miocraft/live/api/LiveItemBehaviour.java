@@ -1,4 +1,4 @@
-package dev.claudelauncher.live.api;
+package dev.miocraft.live.api;
 
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;

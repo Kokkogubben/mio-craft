@@ -1,5 +1,5 @@
 {
-  "name": "claude-launcher",
+  "name": "mio-craft",
   "version": "0.1.0",
   "private": true,
   "description": "A lightweight Minecraft launcher that Claude Code can build mods for",

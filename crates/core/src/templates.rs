@@ -248,9 +248,9 @@ jar {{
     )
 }
 
-/// Claude Launcher passes `-Pclaude_live_api=<jar>` so mods can implement live
-/// behaviours (dev.claudelauncher.live.api) without bundling the companion.
-const LIVE_API_BLOCK: &str = r#"// Claude Launcher live mode: behaviour interfaces for live content.
+/// MioCraft passes `-Pclaude_live_api=<jar>` so mods can implement live
+/// behaviours (dev.miocraft.live.api) without bundling the companion.
+const LIVE_API_BLOCK: &str = r#"// MioCraft live mode: behaviour interfaces for live content.
 if (project.hasProperty('claude_live_api') && file(project.claude_live_api).exists()) {
     dependencies {
         compileOnly files(project.claude_live_api)
@@ -477,7 +477,7 @@ fn claude_md(s: &ModSpec) -> String {
     format!(
         r#"# {name}
 
-A {loader} mod for Minecraft {mc}, created in Claude Launcher.
+A {loader} mod for Minecraft {mc}, created in MioCraft.
 
 - Mod id: `{id}`
 - Main class: `{pkg}.{class}`
@@ -489,7 +489,7 @@ A {loader} mod for Minecraft {mc}, created in Claude Launcher.
 
 ## Working on this mod
 
-Use the `claude-launcher` MCP tools instead of running Gradle yourself; they use
+Use the `mio-craft` MCP tools instead of running Gradle yourself; they use
 the launcher's own Java and Gradle so nothing needs installing:
 
 1. Edit the source under `src/main`.

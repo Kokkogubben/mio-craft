@@ -87,7 +87,7 @@ export async function openUrl(url: string): Promise<void> {
 
 export async function mcpServerPath(): Promise<string> {
   if (inTauri) return invoke<string>("mcp_server_path");
-  return "<path to>/claude-launcher-mcp.mjs";
+  return "<path to>/mio-craft-mcp.mjs";
 }
 
 export const enc = encodeURIComponent;

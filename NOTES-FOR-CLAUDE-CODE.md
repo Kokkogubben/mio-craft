@@ -24,7 +24,7 @@ Never compiled. Run `npm run setup` then `npm run dev` and fix any errors in
 Create a vanilla instance (e.g. 1.21.1) and press Play. Check:
 - The version list loads (`mojang::manifest`).
 - Libraries, assets and Java (Adoptium JDK zip) download and extract to
-  `%APPDATA%\ClaudeLauncher`.
+  `%APPDATA%\MioCraft`.
 - The game launches. If it doesn't, compare the command in `launch::plan` with
   what the official launcher uses (argument rules, natives, classpath).
 - Also try an old version (e.g. 1.8.9, which uses `minecraftArguments` and natives
@@ -94,7 +94,7 @@ the real APIs, check:
 - **Modrinth**: search facets (`categories:fabric|neoforge`, `versions:<mc>`)
   return sensible results; the versions endpoint filters by loader and game
   version. Modrinth asks for a User-Agent that identifies the app with contact
-  info. It's currently `ClaudeLauncher/<version>` in `http.rs`; add a GitHub URL
+  info. It's currently `MioCraft/<version>` in `http.rs`; add a GitHub URL
   or email.
 - **CurseForge** (needs the user's API key): the `modLoaderType` values
   (Fabric = 4, NeoForge = 6), `sortField` values, and that files with
@@ -106,7 +106,7 @@ the real APIs, check:
 ## 7. Sign-in token storage (`secrets.rs`, `auth.rs`)
 
 Tokens go into Windows Credential Manager via the `keyring` crate (service
-`ClaudeLauncher`, entries `<uuid>:refresh` and `<uuid>:minecraft`; split because
+`MioCraft`, entries `<uuid>:refresh` and `<uuid>:minecraft`; split because
 of Windows' 2,560-byte limit per credential). Tested with an in-memory store
 only. On Windows, check that sign-in saves entries (visible in Control Panel →
 Credential Manager → Windows Credentials), that `accounts.json` no longer has
@@ -162,7 +162,7 @@ be downloaded here. Every Minecraft/Fabric API call I couldn't check is marked
 `// VERIFY(26.x)` (31 places): run `grep -rn "VERIFY(26.x)" crates/core/live`.
 Suggested order:
 1. Create a Fabric 26.x instance, turn on Content slots, press Play. The launcher
-   writes the companion to `%APPDATA%\ClaudeLauncher\live\companion\<version>\src`
+   writes the companion to `%APPDATA%\MioCraft\live\companion\<version>\src`
    and builds it there. Fix compile errors in `crates/core/live/companion` (the
    source of truth; the launcher regenerates from it), rebuild the launcher, retry.
 2. In game: `define_live_block` with a texture, then `give_live_content`. Check

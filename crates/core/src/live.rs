@@ -22,7 +22,7 @@ use crate::mojang::VersionJson;
 use crate::{java, maven, templates, Launcher};
 
 pub const AGENT_SOURCE: &str = include_str!("../live/agent/LiveAgent.java");
-const AGENT_MANIFEST: &str = "Manifest-Version: 1.0\nPremain-Class: dev.claudelauncher.agent.LiveAgent\nAgent-Class: dev.claudelauncher.agent.LiveAgent\nCan-Redefine-Classes: true\nCan-Retransform-Classes: true\n";
+const AGENT_MANIFEST: &str = "Manifest-Version: 1.0\nPremain-Class: dev.miocraft.agent.LiveAgent\nAgent-Class: dev.miocraft.agent.LiveAgent\nCan-Redefine-Classes: true\nCan-Retransform-Classes: true\n";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -98,7 +98,7 @@ pub async fn ensure_agent(l: &Launcher, jdk_home: &Path) -> Result<PathBuf> {
     }
     let work = dir.join("agent-build");
     let _ = tokio::fs::remove_dir_all(&work).await;
-    let src = work.join("src/dev/claudelauncher/agent/LiveAgent.java");
+    let src = work.join("src/dev/miocraft/agent/LiveAgent.java");
     tokio::fs::create_dir_all(src.parent().unwrap()).await?;
     tokio::fs::create_dir_all(work.join("classes")).await?;
     tokio::fs::write(&src, AGENT_SOURCE).await?;
@@ -160,7 +160,7 @@ pub async fn plan(l: &Launcher, inst: &Instance, v: &VersionJson) -> Result<Live
     let dir = live_dir(l, inst);
     tokio::fs::create_dir_all(&dir).await?;
     let _ = tokio::fs::remove_file(dir.join("agent.json")).await;
-    let props = |k: &str, v: String| format!("-Dclaudelauncher.live.{k}={v}");
+    let props = |k: &str, v: String| format!("-Dmiocraft.live.{k}={v}");
     plan.jvm_args.push(props("dir", dir.to_string_lossy().into()));
     if s.hotswap {
         let major = java::required_major(v);

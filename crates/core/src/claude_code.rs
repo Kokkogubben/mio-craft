@@ -11,8 +11,8 @@ use crate::loaders::Loader;
 use crate::projects::ModProject;
 use crate::Launcher;
 
-pub const MCP_NAME: &str = "claude-launcher";
-const MCP_SCRIPT: &str = "claude-launcher-mcp.mjs";
+pub const MCP_NAME: &str = "mio-craft";
+const MCP_SCRIPT: &str = "mio-craft-mcp.mjs";
 
 /// Find an executable on PATH (and Claude Code's usual install folders).
 pub fn find_program(name: &str) -> Option<PathBuf> {
@@ -40,7 +40,7 @@ pub fn find_program(name: &str) -> Option<PathBuf> {
 pub struct Status {
     pub claude_path: Option<PathBuf>,
     pub node_path: Option<PathBuf>,
-    /// Whether `claude mcp get claude-launcher` succeeds.
+    /// Whether `claude mcp get mio-craft` succeeds.
     pub connected: bool,
 }
 
@@ -115,14 +115,14 @@ fn loader_label(l: Loader) -> &'static str {
     }
 }
 
-const NO_TOOLS: &str = "If the claude-launcher tools aren't available, tell me to open Claude Launcher and use Settings → Connect Claude Code.";
+const NO_TOOLS: &str = "If the mio-craft tools aren't available, tell me to open MioCraft and use Settings → Connect Claude Code.";
 
 /// Prompt for a brand-new mod in an instance.
 pub fn new_mod_prompt(inst: &Instance, idea: &str) -> String {
     format!(
-        "I want a new Minecraft mod for my Claude Launcher instance \"{name}\" (instance id {id}: Minecraft {mc}, {loader} {lv}). \
+        "I want a new Minecraft mod for my MioCraft instance \"{name}\" (instance id {id}: Minecraft {mc}, {loader} {lv}). \
          The idea: {idea} \
-         Use the claude-launcher MCP tools: create_mod for instance {id}, read the CLAUDE.md in the project it creates, write the mod, \
+         Use the mio-craft MCP tools: create_mod for instance {id}, read the CLAUDE.md in the project it creates, write the mod, \
          run build_mod and fix errors until it compiles, then install_mod. Test it with run_dev_client and check read_dev_log for errors, \
          then stop_dev_client and tell me what you made. {NO_TOOLS}",
         name = inst.name,
@@ -139,7 +139,7 @@ pub fn project_prompt(p: &ModProject, request: &str) -> String {
     format!(
         "Work on my Minecraft mod \"{name}\" (mod project id {id}, a {loader} mod for Minecraft {mc}). Its source is in {path}; read its CLAUDE.md first. \
          What I want: {req} \
-         When done, run install_mod for {id} with the claude-launcher MCP tools, fix any build errors, and test with run_dev_client and read_dev_log. {NO_TOOLS}",
+         When done, run install_mod for {id} with the mio-craft MCP tools, fix any build errors, and test with run_dev_client and read_dev_log. {NO_TOOLS}",
         name = p.name,
         id = p.id,
         loader = loader_label(p.loader),
@@ -169,7 +169,7 @@ pub fn crash_prompt(inst: &Instance, c: &crate::crash::CrashInfo) -> String {
          Summary: {desc}{exc}. Crash report: {report}. Game log: {game}. Raw launcher output: {out}. \
          Mods that appear in the stack trace: {suspects}. \
          Read the crash report and logs (read_game_log with kind crash, game or launcher works too) and find the cause. \
-         If it's in a mod you made (a claude-launcher mod project), fix it, run install_mod, and test with run_dev_client and read_dev_log. \
+         If it's in a mod you made (a mio-craft mod project), fix it, run install_mod, and test with run_dev_client and read_dev_log. \
          If it's a third-party mod or a conflict between mods, explain the problem and suggest a fix such as update_mods or set_mod_enabled, \
          but ask me before changing third-party mods. {NO_TOOLS}",
         name = inst.name,
