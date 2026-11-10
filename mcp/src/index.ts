@@ -17,6 +17,7 @@ const server = new McpServer(
       "(read its CLAUDE.md first) → build_mod and fix any errors → install_mod so it appears in the launcher's",
       "mod list → run_dev_client to test offline, read_dev_log to check output → stop_dev_client.",
       "To add third-party mods or libraries use search_online_mods then install_online_mod.",
+      "For changes while the game runs, check get_live_status: hotswap_mod swaps code, define_live_block / define_live_item add content without restarting.",
       "Use launch_game only when the user wants to play their real instance; read_game_log with kind 'crash' after a crash.",
       "Don't run Gradle directly: these tools use the launcher's bundled Java and Gradle.",
     ].join(" "),
@@ -383,6 +384,102 @@ server.registerTool(
     inputSchema: { instance_id: z.string() },
   },
   async ({ instance_id }) => run(() => call("POST", `/instances/${enc(instance_id)}/stop`)),
+);
+
+// ---------- live mode ----------
+
+const behaviourSchema = z
+  .object({
+    project_id: z.string().describe("Mod project whose compiled classes contain the behaviour"),
+    class_name: z.string().describe("Fully qualified class implementing dev.claudelauncher.live.api.LiveBlockBehaviour / LiveItemBehaviour"),
+  })
+  .optional();
+
+server.registerTool(
+  "get_live_status",
+  {
+    description:
+      "Live mode state of an instance: which toggles are on (hotswap, content_slots, in_memory_textures, unfreeze_registries), whether the game is running with the hotswap agent, slots used, and defined live content with their in-game ids.",
+    inputSchema: { instance_id: z.string() },
+  },
+  async ({ instance_id }) => run(() => call("GET", `/instances/${enc(instance_id)}/live`)),
+);
+
+server.registerTool(
+  "hotswap_mod",
+  {
+    description:
+      "Compile a mod project and push changed classes into the running game (needs live mode Hotswap, and the mod installed when the game started). Method bodies always swap; adding methods or fields works thanks to JetBrains Runtime. Code that only runs at startup won't run again, and resources need F3+T or /reload. The jar is updated automatically when the game exits. Also refreshes live behaviours.",
+    inputSchema: { mod_id: z.string() },
+  },
+  async ({ mod_id }) => run(() => call("POST", `/projects/${enc(mod_id)}/hotswap`)),
+);
+
+server.registerTool(
+  "define_live_block",
+  {
+    description:
+      "Create or update a block in the running game without restarting (live mode Content slots). It fills a pre-registered slot: name, texture, hardness, light, drops and behaviour all apply live. Light applies to blocks placed after the change. Set register=true to instead register a real block (experimental route 4, needs Unfreeze registries; triggers one resource reload). Write the texture as a 16x16 PNG file and pass its absolute path.",
+    inputSchema: {
+      instance_id: z.string(),
+      id: z.string().describe("lowercase a-z, 0-9, _"),
+      name: z.string(),
+      texture_path: z.string().optional(),
+      hardness: z.number().optional().describe("Stone is 1.5, obsidian 50, -1 unbreakable"),
+      resistance: z.number().optional(),
+      light: z.number().int().min(0).max(15).optional(),
+      requires_tool: z.boolean().optional(),
+      drops: z.array(z.object({ item: z.string(), min: z.number().int().optional(), max: z.number().int().optional() })).optional(),
+      behaviour: behaviourSchema,
+      register: z.boolean().optional(),
+    },
+  },
+  async ({ instance_id, ...b }) => run(() => call("POST", `/instances/${enc(instance_id)}/live/blocks`, { ...b, register: b.register ?? false })),
+);
+
+server.registerTool(
+  "define_live_item",
+  {
+    description: "Create or update an item in the running game without restarting; see define_live_block.",
+    inputSchema: {
+      instance_id: z.string(),
+      id: z.string(),
+      name: z.string(),
+      texture_path: z.string().optional(),
+      max_stack: z.number().int().min(1).max(99).optional(),
+      behaviour: behaviourSchema,
+      register: z.boolean().optional(),
+    },
+  },
+  async ({ instance_id, ...b }) => run(() => call("POST", `/instances/${enc(instance_id)}/live/items`, { ...b, register: b.register ?? false })),
+);
+
+server.registerTool(
+  "remove_live_content",
+  {
+    description: "Remove a live block or item definition, freeing its slot. Runtime-registered content stays registered until the game restarts.",
+    inputSchema: { instance_id: z.string(), kind: z.enum(["block", "item"]), id: z.string() },
+  },
+  async ({ instance_id, kind, id }) => run(() => call("DELETE", `/instances/${enc(instance_id)}/live/${kind}/${enc(id)}`)),
+);
+
+server.registerTool(
+  "give_live_content",
+  {
+    description: "Give the player a live block or item in the running singleplayer game.",
+    inputSchema: { instance_id: z.string(), kind: z.enum(["block", "item"]), id: z.string(), count: z.number().int().positive().optional() },
+  },
+  async ({ instance_id, ...b }) => run(() => call("POST", `/instances/${enc(instance_id)}/live/give`, { ...b, count: b.count ?? 1 })),
+);
+
+server.registerTool(
+  "run_game_command",
+  {
+    description:
+      "Run a Minecraft command in the user's running singleplayer world, as the server (e.g. \"time set day\", \"tp @p 0 100 0\"). Results are in claude-live/commands.log. Only use commands the user asked for or that are clearly needed to test their mod.",
+    inputSchema: { instance_id: z.string(), command: z.string() },
+  },
+  async ({ instance_id, command }) => run(() => call("POST", `/instances/${enc(instance_id)}/live/command`, { command })),
 );
 
 server.registerTool(

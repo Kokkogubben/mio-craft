@@ -145,7 +145,46 @@ importing an exported pack into another launcher (Prism, Modrinth App).
 - The first-run setup shows when `config.json` has no `"onboarded": true`, so
   people upgrading from an earlier build see it once.
 
-## 11. Polish ideas (not done)
+## 11. Live mode (the newest and least tested part)
+
+Code: `crates/core/src/live.rs` (settings, launch flags, agent client),
+`live_content.rs` (content.json), `companion.rs` (builds and installs the
+companion), `projects::hotswap`, the agent at `crates/core/live/agent`, and the
+companion mod source at `crates/core/live/companion`.
+
+**Tested here:** the hotswap agent end to end against a real JVM (a running
+class redefined, plus a class that loads later getting the new bytecode),
+content.json slot assignment and validation, the generated companion project
+and its placeholder PNGs, and the UI.
+
+**Never compiled: the companion mod.** It targets Minecraft 26.x, which couldn't
+be downloaded here. Every Minecraft/Fabric API call I couldn't check is marked
+`// VERIFY(26.x)` (31 places): run `grep -rn "VERIFY(26.x)" crates/core/live`.
+Suggested order:
+1. Create a Fabric 26.x instance, turn on Content slots, press Play. The launcher
+   writes the companion to `%APPDATA%\ClaudeLauncher\live\companion\<version>\src`
+   and builds it there. Fix compile errors in `crates/core/live/companion` (the
+   source of truth; the launcher regenerates from it), rebuild the launcher, retry.
+2. In game: `define_live_block` with a texture, then `give_live_content`. Check
+   the name, hardness, drops and light, and the creative tab "Claude Live".
+3. Instant textures: check `Textures.paint` (atlas lookup via AtlasManager,
+   `writeToTexture` arguments, mip levels). If painting can't work, the
+   resource-pack path (toggle off) is the fallback.
+4. Behaviours: a class implementing `LiveBlockBehaviour` in a mod project, set as
+   a block's behaviour; edit it, run `hotswap_mod`, check it reloads.
+5. Hotswap: check JetBrains Runtime downloads (`java::ensure_jbr`, pinned to
+   25.0.4 b508.27; Minecraft 26.x needs Java 25) and that `-javaagent` for the
+   Sponge Mixin jar is accepted. Test editing a method, then adding a method.
+6. Route 4 last: `MappedRegistryAccessor` field names, the `bindTags` invoker,
+   `Block.BLOCK_STATE_REGISTRY`, `BlockItem#registerBlocks`, `executeBlocking`.
+   Look for other caches built from the block/item registries at startup and
+   add them to `RuntimeRegistrar`.
+
+Also unverified: the dev client (`run_dev_client`) doesn't get live mode yet,
+only Play does; Mixin's hot-swap property name (`-Dmixin.hotSwap`); the
+`pack.mcmeta` format fields for 26.x.
+
+## 12. Polish ideas (not done)
 
 - Mod detail pages (README/gallery) inside the browser.
 - Show the game's log level colours more faithfully; filter by source in the console.

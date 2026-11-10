@@ -13,7 +13,18 @@ interface Instance {
   game_dir: string;
   mods_dir: string;
   ram_mb: number | null;
+  live?: LiveSettings;
 }
+
+interface LiveSettings {
+  hotswap: boolean;
+  content_slots: boolean;
+  in_memory_textures: boolean;
+  unfreeze_registries: boolean;
+  slot_count: number;
+}
+
+const liveOn = (i: Instance) => !!i.live && (i.live.hotswap || i.live.content_slots || i.live.unfreeze_registries);
 
 interface ModEntry {
   file_name: string;
@@ -260,6 +271,7 @@ function renderMain() {
           <span class="chip">Minecraft ${esc(inst.mc_version)}</span>
           <span class="chip ${esc(inst.loader)}">${loaderLabel(inst.loader)}${inst.loader_version ? ` ${esc(inst.loader_version)}` : ""}</span>
           ${inst.installed ? "" : '<span class="chip warn">Not installed</span>'}
+          ${liveOn(inst) ? `<span class="chip live" title="Live mode is on for the next launch">⚡ Live${inst.live!.unfreeze_registries ? " · experimental" : ""}</span>` : ""}
         </div>
       </div>
       <div class="head-actions">
@@ -608,6 +620,7 @@ function projectsTab(inst: Instance): string {
         </div>
         <div class="mod-actions">
           <button class="btn small" data-action="rebuild" data-project="${esc(p.id)}" ${building ? "disabled" : ""}>${building ? "Building…" : "Build & install"}</button>
+          ${inst.live?.hotswap && S.running.has(`game:${inst.id}`) ? `<button class="btn small update" data-action="hotswap" data-project="${esc(p.id)}" ${S.busy.has(`hotswap:${p.id}`) ? "disabled" : ""} title="Push code changes into the running game">${S.busy.has(`hotswap:${p.id}`) ? "Swapping…" : "⚡ Hotswap"}</button>` : ""}
           <button class="btn small ghost" data-action="ask-claude" data-project="${esc(p.id)}" title="Ask Claude Code to change this mod">Ask Claude</button>
           <button class="btn small ghost" data-action="${dev ? "stop-dev" : "run-dev"}" data-project="${esc(p.id)}" title="Test with an offline development client">${dev ? "Stop test" : "Test"}</button>
         </div>
@@ -959,11 +972,28 @@ function accountsModal() {
     </div>`);
 }
 
-function instanceModal(inst: Instance) {
+async function instanceModal(inst: Instance) {
+  const status = await api<{ unsupported_reason: string | null }>("GET", `/instances/${enc(inst.id)}/live`).catch(() => ({ unsupported_reason: "Couldn't check live mode support." }));
+  const L: LiveSettings = inst.live ?? { hotswap: false, content_slots: false, in_memory_textures: false, unfreeze_registries: false, slot_count: 64 };
+  const off = !!status.unsupported_reason;
+  const toggle = (key: keyof LiveSettings, title: string, desc: string, extra = "") => `
+    <label class="live-opt ${extra}">
+      <span class="switch"><input type="checkbox" id="lv-${key}" ${L[key] ? "checked" : ""} ${off ? "disabled" : ""}/><span></span></span>
+      <span><strong>${title}</strong><span class="muted small">${desc}</span></span>
+    </label>`;
   openModal(`
     <h2>Edit instance</h2>
     <label class="field"><span>Name</span><input id="ie-name" class="input" value="${esc(inst.name)}"/></label>
     <label class="field"><span>Memory (MB, blank for default)</span><input id="ie-ram" type="number" min="1024" step="512" class="input" value="${esc(inst.ram_mb ?? "")}"/></label>
+    <section class="settings-sec live-sec">
+      <h3>⚡ Live mode <span class="muted small">applies the next time you press Play</span></h3>
+      ${off ? `<p class="muted small">${esc(status.unsupported_reason)}</p>` : '<p class="muted small">Change the game while it runs. Singleplayer only.</p>'}
+      ${toggle("hotswap", "Hotswap code", "Push Claude's code changes into the running game. Uses JetBrains Runtime, downloaded once.")}
+      ${toggle("content_slots", "Content slots", "Add new blocks and items while playing, using pre-registered slots. Stable.")}
+      ${toggle("in_memory_textures", "Instant textures", "Paint new textures straight into the game. Off: an automatic resource reload (a few seconds) instead.")}
+      ${toggle("unfreeze_registries", "Unfreeze registries", "Experimental: register real blocks and items while playing. Can glitch or crash; back up your world first.", "danger-opt")}
+      <label class="field slots ${off ? "dim" : ""}"><span>Slots (blocks and items each)</span><input id="lv-slot_count" type="number" min="1" max="256" class="input" value="${esc(L.slot_count)}" ${off ? "disabled" : ""}/></label>
+    </section>
     <div class="modal-actions spread">
       <button class="btn danger ghost" id="ie-del">Delete instance</button>
       <span><button class="btn ghost" data-action="close-modal">Cancel</button> <button class="btn primary" id="ie-save">Save</button></span>
@@ -971,7 +1001,19 @@ function instanceModal(inst: Instance) {
   $("#ie-save").addEventListener("click", async () => {
     try {
       const ram = $<HTMLInputElement>("#ie-ram").value;
-      await api("PATCH", `/instances/${enc(inst.id)}`, { name: $<HTMLInputElement>("#ie-name").value, ram_mb: ram ? Number(ram) : undefined });
+      const chk = (k: string) => $<HTMLInputElement>(`#lv-${k}`).checked;
+      const live: LiveSettings | undefined = off
+        ? undefined
+        : {
+            hotswap: chk("hotswap"),
+            content_slots: chk("content_slots"),
+            in_memory_textures: chk("in_memory_textures"),
+            unfreeze_registries: chk("unfreeze_registries"),
+            slot_count: Number($<HTMLInputElement>("#lv-slot_count").value) || 64,
+          };
+      if (live?.unfreeze_registries && !L.unfreeze_registries && !confirm("Unfreezing registries is experimental and can crash the game or corrupt a world. Back up worlds you care about. Turn it on?")) return;
+      await api("PATCH", `/instances/${enc(inst.id)}`, { name: $<HTMLInputElement>("#ie-name").value, ram_mb: ram ? Number(ram) : undefined, live });
+      if (S.running.has(`game:${inst.id}`) && live && JSON.stringify(live) !== JSON.stringify(L)) toast("Live mode changes apply the next time you launch");
       closeModal();
     } catch (e) {
       toast((e as Error).message, "err");
@@ -1323,6 +1365,25 @@ document.addEventListener("click", async (ev) => {
       const file = el.dataset.file!;
       if (!confirm(`Delete ${file}?`)) break;
       busy(`mod:${file}`, () => api("DELETE", `/instances/${enc(inst.id)}/mods/${enc(file)}`));
+      break;
+    }
+    case "hotswap": {
+      const pid = el.dataset.project!;
+      busy(`hotswap:${pid}`, async () => {
+        const r = await api<{ compiled: boolean; errors: string[]; changed: string[]; agent: { redefined: string[]; deferred: string[]; errors: string[]; needs_restart: boolean } | null; notes: string[] }>("POST", `/projects/${enc(pid)}/hotswap`);
+        if (!r.compiled) {
+          S.tab = "console";
+          toast(`Didn't compile${r.errors[0] ? `: ${r.errors[0]}` : ""}`, "err");
+          return;
+        }
+        if (!r.agent) {
+          toast(r.notes.find((n) => n.includes("swap")) ?? "Compiled");
+          return;
+        }
+        const n = r.agent.redefined.length + r.agent.deferred.length;
+        toast(n ? `Swapped ${n} class${n === 1 ? "" : "es"} into the game` : "No code changes to swap");
+        r.agent.errors.forEach((e) => toast(e, "err"));
+      });
       break;
     }
     case "run-setup":

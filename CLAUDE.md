@@ -7,6 +7,8 @@ Minecraft launcher (Tauri 2 + TypeScript) with an MCP server so Claude Code can 
 - `src-tauri/` — thin desktop shell that starts the core and serves the UI.
 - `ui/` — vanilla TypeScript + Vite UI; talks only to the core's local API.
 - `mcp/` — MCP server for Claude Code; a thin client of the local API.
+- `crates/core/live/` — Java for live mode: the hotswap agent and the companion mod (Fabric 26.x),
+  embedded into the launcher and built on demand. Calls marked `VERIFY(26.x)` were never compiled.
 
 Start with NOTES-FOR-CLAUDE-CODE.md: it lists what was never run on Windows and needs verifying.
 Keep logic in the core, not in the UI or the shell, so the UI and the MCP server stay in sync.

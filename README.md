@@ -12,11 +12,12 @@ installs it. The mod then shows up in the launcher's mod list, tagged
 - **Make a mod with Claude**: describe a mod in the launcher and it opens Claude Code with your idea and the instance ready; "Ask Claude" does the same for changing an existing mod
 - **Modpacks**: import Modrinth `.mrpack` files (Fabric and NeoForge) and export instances to share, with Claude's mods included
 - **Crash helper**: when the game crashes, a banner shows what went wrong and which mods were involved, with **Ask Claude to fix**
+- **Live mode** (Fabric on Minecraft 26.x): change the game while it runs: hotswap code, add new blocks and items with live textures, and an experimental mode that registers real content mid-game. Each part is a toggle in the instance's settings
 - **First-run setup** that walks through connecting Claude Code, sign-in and CurseForge
 - **Sign-in tokens in Windows Credential Manager**, not in a plain file
 - **Microsoft account sign-in**
 - **Java and Gradle downloaded automatically**, so you don't need to install anything to play or to build mods
-- **MCP server for Claude Code** with 24 tools: create instances and mods, build, install, run a test client, read logs and crash reports
+- **MCP server for Claude Code** with 31 tools: create instances and mods, build, install, run a test client, read logs and crash reports
 - Small: a Tauri app (Rust + a web UI), not Electron
 
 ## How it fits together
@@ -128,6 +129,9 @@ Microsoft requires every third-party launcher to use its own Azure app:
 | `run_dev_client`, `stop_dev_client`, `read_dev_log` | Offline test client (`gradle runClient`) |
 | `launch_game`, `stop_game`, `read_game_log` | Play the real instance; read `latest.log`, raw output or the newest crash report |
 | `get_crash_info` | Summary of the latest crash and the mods in its stack trace |
+| `get_live_status`, `hotswap_mod` | Live mode state; push code changes into the running game |
+| `define_live_block`, `define_live_item`, `remove_live_content` | Add or change content while the game runs |
+| `give_live_content`, `run_game_command` | Give live content to the player; run a command in the singleplayer world |
 
 ## Version support
 
@@ -149,6 +153,29 @@ the core and the MCP server respect it).
 
 See [NOTES-FOR-CLAUDE-CODE.md](NOTES-FOR-CLAUDE-CODE.md) for what still needs
 checking on a real Windows machine.
+
+## Live mode
+
+Change a game while it runs, without restarting. Open an instance's **Edit**
+dialog; the toggles apply the next time you press Play. Fabric on Minecraft
+26.1+ only (unobfuscated), singleplayer.
+
+| Toggle | What it does | Stability |
+|---|---|---|
+| **Hotswap code** | Runs the game on JetBrains Runtime with enhanced class redefinition, Mixin's hot-swap agent, and the launcher's agent. `hotswap_mod` (or ⚡ Hotswap on a project) compiles and pushes only changed classes. Adding methods and fields works; code that only runs at startup doesn't re-run. The jar is updated when the game exits. | Stable |
+| **Content slots** | The companion mod pre-registers blank blocks and items (64 of each by default). Claude fills a slot with a name, texture, hardness, light, drops and behaviour code, all live. Behaviour classes reload in a fresh class loader whenever they're recompiled. | Stable |
+| **Instant textures** | Paints new textures straight into the block atlas, in spots reserved at startup. Off: textures go into a resource pack and the game reloads resources automatically (a few seconds). | Stable |
+| **Unfreeze registries** | Experimental. Registers real blocks and items after startup (both threads paused), patches the lookups Minecraft builds from its registries, then reloads resources for the new models. | Can glitch or crash; back up worlds |
+
+Limits of content slots: light changes apply to blocks placed afterwards, the
+slot count is fixed per session, and content keeps the slot's id
+(`claude_live:slot_block_3`) in the world. Turning content slots off removes the
+companion mod, so blocks placed from slots disappear from worlds.
+
+The companion mod is generated and built by the launcher the first time live
+content is enabled (`%APPDATA%\ClaudeLauncher\live`), and installed or
+removed at each launch to match the toggles. It also installs Fabric API, which
+it needs.
 
 ## Crashes
 

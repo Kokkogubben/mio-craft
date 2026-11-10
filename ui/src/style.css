@@ -1331,3 +1331,58 @@ textarea.input {
 button.link.muted {
   color: var(--muted);
 }
+
+/* ---------- live mode ---------- */
+
+.chip.live {
+  color: #f2c94c;
+  background: rgba(242, 201, 76, 0.12);
+}
+
+.live-opt {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.live-opt .switch {
+  margin-top: 2px;
+}
+
+.live-opt > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.live-opt.danger-opt strong {
+  color: #ff9a92;
+}
+
+.live-opt.danger-opt input:checked + span {
+  background: var(--danger);
+}
+
+.live-sec .field.slots {
+  margin: 8px 0 0;
+  max-width: 220px;
+}
+
+.dim {
+  opacity: 0.5;
+}
+
+.switch input:disabled + span {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.live-opt:has(input:disabled) {
+  cursor: default;
+}
+
+.live-opt:has(input:disabled) strong {
+  opacity: 0.6;
+}
