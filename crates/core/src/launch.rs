@@ -153,6 +153,8 @@ pub async fn plan(
         "-Dlog4j2.formatMsgNoLookups=true".to_string(),
     ];
     args.extend(cfg.extra_jvm_args.iter().cloned());
+    let live = crate::live::plan(l, inst, &v).await?;
+    args.extend(live.jvm_args);
 
     match &v.arguments {
         Some(a) if !a.jvm.is_empty() => args.extend(expand(&a.jvm, &vars)),
@@ -170,7 +172,10 @@ pub async fn plan(
         args.extend(legacy.split_whitespace().map(|s| substitute(s, &vars)));
     }
 
-    let jdk = java::ensure_jdk(l, java::required_major(&v)).await?;
+    let jdk = match live.java_home {
+        Some(jbr) => jbr,
+        None => java::ensure_jdk(l, java::required_major(&v)).await?,
+    };
     Ok(LaunchPlan { java: java::java_bin(&jdk), args, game_dir })
 }
 
@@ -218,6 +223,8 @@ pub async fn launch(l: &Launcher, instance_id: &str, account_id: Option<&str>) -
                             if code.map(|c| c != 0).unwrap_or(false) {
                                 l2.emit(crate::Event::InstancesChanged);
                             }
+                            // Save hotswapped code into the mod jars now the files are unlocked.
+                            crate::projects::install_pending(&l2, &id).await;
                         }
                         break;
                     }

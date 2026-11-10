@@ -251,6 +251,7 @@ mod tests {
             last_played: None,
             last_exit: None,
             crash_dismissed_at: None,
+            live: Default::default(),
         }
     }
 

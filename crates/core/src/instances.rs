@@ -26,6 +26,9 @@ pub struct Instance {
     /// A crash at or before this time has been dismissed in the UI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crash_dismissed_at: Option<u64>,
+    /// Live mode toggles; applied on the next launch.
+    #[serde(default)]
+    pub live: crate::live::LiveSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -139,6 +142,7 @@ pub async fn create(l: &Launcher, req: NewInstance) -> Result<Instance> {
         last_played: None,
         last_exit: None,
         crash_dismissed_at: None,
+        live: Default::default(),
     };
     tokio::fs::create_dir_all(l.paths.mods_dir(&inst.id)).await?;
     save(l, &inst).await?;
@@ -189,6 +193,7 @@ pub async fn delete(l: &Launcher, id: &str) -> Result<()> {
 pub struct InstancePatch {
     pub name: Option<String>,
     pub ram_mb: Option<u32>,
+    pub live: Option<crate::live::LiveSettings>,
 }
 
 pub async fn update(l: &Launcher, id: &str, p: InstancePatch) -> Result<Instance> {
@@ -198,6 +203,15 @@ pub async fn update(l: &Launcher, id: &str, p: InstancePatch) -> Result<Instance
     }
     if let Some(r) = p.ram_mb {
         inst.ram_mb = Some(r.clamp(512, 65536));
+    }
+    if let Some(live) = p.live {
+        let live = live.normalized();
+        if live.any() {
+            if let Some(why) = crate::live::unsupported_reason(&inst) {
+                anyhow::bail!(why);
+            }
+        }
+        inst.live = live;
     }
     save(l, &inst).await?;
     l.emit(Event::InstancesChanged);

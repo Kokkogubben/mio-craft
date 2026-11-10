@@ -27,6 +27,9 @@ pub struct ModProject {
     pub created_at: u64,
     #[serde(default)]
     pub last_build: Option<BuildSummary>,
+    /// Instance to reinstall the jar into when its game exits (after a hotswap).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_install: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,6 +156,7 @@ pub async fn create(l: &Launcher, req: NewProject) -> Result<ModProject> {
         toolchain,
         created_at: now(),
         last_build: None,
+        pending_install: None,
     };
     save(&project).await?;
     l.emit(Event::ProjectsChanged);
@@ -207,7 +211,35 @@ pub async fn build(l: &Launcher, id: &str) -> Result<BuildResult> {
     }
     let libs = p.path.join("build").join("libs");
     let _ = tokio::fs::remove_dir_all(&libs).await;
-    let mut cmd = gradle_command(l, &p, &["build", "-x", "test"]).await?;
+    let (status, all) = run_gradle(l, &p, &["build", "-x", "test"], &source).await?;
+
+    let _ = tokio::fs::write(p.path.join("build").join("launcher-build.log"), all.join("\n")).await;
+    let jar = if status.success() { find_jar(&libs) } else { None };
+    let success = status.success() && jar.is_some();
+    let errors: Vec<String> = all.iter().filter(|l| is_error_line(l)).take(60).cloned().collect();
+    let tail_start = all.len().saturating_sub(80);
+    let result = BuildResult {
+        success,
+        jar: jar.as_ref().map(|j| j.to_string_lossy().to_string()),
+        errors,
+        output_tail: all[tail_start..].join("\n"),
+        installed_as: None,
+    };
+    p.last_build = Some(BuildSummary { success, at: now(), jar: result.jar.clone() });
+    save(&p).await?;
+    l.emit(Event::BuildFinished {
+        project_id: id.into(),
+        success,
+        message: if success { "Build succeeded".into() } else { "Build failed".into() },
+    });
+    l.emit(Event::ProjectsChanged);
+    Ok(result)
+}
+
+/// Run Gradle tasks, streaming output under `source`. Returns the exit status and all lines.
+async fn run_gradle(l: &Launcher, p: &ModProject, tasks: &[&str], source: &str) -> Result<(std::process::ExitStatus, Vec<String>)> {
+    let source = source.to_string();
+    let mut cmd = gradle_command(l, p, tasks).await?;
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null()).kill_on_drop(true);
     process::hide_window(&mut cmd);
     l.emit(Event::ProcessStarted { source: source.clone() });
@@ -241,28 +273,7 @@ pub async fn build(l: &Launcher, id: &str) -> Result<BuildResult> {
     .await
     .map_err(|_| anyhow!("the build took longer than 30 minutes and was stopped"))??;
     l.emit(Event::ProcessExited { source: source.clone(), code: status.code() });
-
-    let _ = tokio::fs::write(p.path.join("build").join("launcher-build.log"), all.join("\n")).await;
-    let jar = if status.success() { find_jar(&libs) } else { None };
-    let success = status.success() && jar.is_some();
-    let errors: Vec<String> = all.iter().filter(|l| is_error_line(l)).take(60).cloned().collect();
-    let tail_start = all.len().saturating_sub(80);
-    let result = BuildResult {
-        success,
-        jar: jar.as_ref().map(|j| j.to_string_lossy().to_string()),
-        errors,
-        output_tail: all[tail_start..].join("\n"),
-        installed_as: None,
-    };
-    p.last_build = Some(BuildSummary { success, at: now(), jar: result.jar.clone() });
-    save(&p).await?;
-    l.emit(Event::BuildFinished {
-        project_id: id.into(),
-        success,
-        message: if success { "Build succeeded".into() } else { "Build failed".into() },
-    });
-    l.emit(Event::ProjectsChanged);
-    Ok(result)
+    Ok((status, all))
 }
 
 /// Build, then copy the jar into the project's instance (tagged as Claude-made).
@@ -289,6 +300,156 @@ pub async fn install(l: &Launcher, id: &str, instance_id: Option<&str>) -> Resul
         r.installed_as = Some(mods::install_jar(l, &target, &jar, Some(id)).await?);
     }
     Ok(r)
+}
+
+// ---------- live hotswap ----------
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HotswapResult {
+    pub compiled: bool,
+    /// Compiler errors when `compiled` is false.
+    pub errors: Vec<String>,
+    /// Classes whose bytecode differed from what the game has.
+    pub changed: Vec<String>,
+    pub agent: Option<crate::live::RedefineResult>,
+    /// The jar will be reinstalled into the instance when the game exits,
+    /// so the change survives a restart.
+    pub install_queued: bool,
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct HotswapState {
+    agent_token: String,
+    /// Binary class name → sha1 of what the running game has.
+    sent: std::collections::HashMap<String, String>,
+}
+
+fn sha1_hex(b: &[u8]) -> String {
+    use sha1::Digest;
+    hex::encode(sha1::Sha1::digest(b))
+}
+
+/// Class name → sha1 for every class in a jar.
+fn jar_class_hashes(jar: &Path) -> std::collections::HashMap<String, String> {
+    use std::io::Read;
+    let mut out = std::collections::HashMap::new();
+    let Ok(f) = std::fs::File::open(jar) else { return out };
+    let Ok(mut z) = zip::ZipArchive::new(f) else { return out };
+    for i in 0..z.len() {
+        let Ok(mut e) = z.by_index(i) else { continue };
+        let name = e.name().to_string();
+        if let Some(c) = name.strip_suffix(".class") {
+            let mut b = vec![];
+            if e.read_to_end(&mut b).is_ok() {
+                out.insert(c.replace('/', "."), sha1_hex(&b));
+            }
+        }
+    }
+    out
+}
+
+fn walk_classes(root: &Path) -> Vec<PathBuf> {
+    let mut out = vec![];
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().map(|x| x == "class").unwrap_or(false) {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
+/// Compile a project and push changed classes into its running game.
+pub async fn hotswap(l: &Launcher, id: &str) -> Result<HotswapResult> {
+    let mut p = get(l, id).await?;
+    let inst = instances::get(l, &p.instance_id).await?;
+    if !l.processes.is_running(&crate::launch::game_source(&inst.id)).await {
+        bail!("{} isn't running. Launch it with live mode Hotswap on, then try again (or use install_mod while it's closed).", inst.name);
+    }
+    let agent_json = crate::live::agent_json(l, &inst.id);
+    let info = crate::live::agent_info(&agent_json).await?;
+
+    let (status, lines) = run_gradle(l, &p, &["classes", "-x", "test"], &format!("build:{id}")).await?;
+    let mut result = HotswapResult { compiled: status.success(), errors: vec![], changed: vec![], agent: None, install_queued: false, notes: vec![] };
+    if !status.success() {
+        result.errors = lines.iter().filter(|x| is_error_line(x)).take(60).cloned().collect();
+        return Ok(result);
+    }
+
+    // What the game has: the jar it loaded, plus anything we've sent since.
+    let state_file = p.path.join("build").join("launcher-hotswap.json");
+    let mut state: HotswapState = http::read_json(&state_file).await.unwrap_or_default();
+    if state.agent_token != info.token {
+        state = HotswapState { agent_token: info.token.clone(), sent: Default::default() };
+    }
+    let tags = mods::load_tags(l, &inst.id).await;
+    let installed_jar = tags
+        .files
+        .iter()
+        .find(|(_, pid)| pid.as_str() == id)
+        .map(|(f, _)| l.paths.mods_dir(&inst.id).join(f));
+    let classes_root = p.path.join("build").join("classes").join("java").join("main");
+    let (root, jar, sent) = (classes_root.clone(), installed_jar.clone(), state.sent.clone());
+    let changed: Vec<(String, Vec<u8>, String)> = tokio::task::spawn_blocking(move || {
+        let base = jar.as_deref().map(jar_class_hashes).unwrap_or_default();
+        walk_classes(&root)
+            .into_iter()
+            .filter_map(|f| {
+                let name = crate::live::class_name(&root, &f)?;
+                let bytes = std::fs::read(&f).ok()?;
+                let h = sha1_hex(&bytes);
+                Some((name, bytes, h))
+            })
+            .filter(|(name, _, h)| sent.get(name).or(base.get(name)) != Some(h))
+            .collect::<Vec<_>>()
+    })
+    .await?;
+    if installed_jar.is_none() {
+        result.notes.push("This mod wasn't installed in the instance when the game started, so its classes only take effect if the game already loads them. Use install_mod and relaunch for a new mod.".into());
+    }
+    if changed.is_empty() {
+        result.notes.push("No code changes to send.".into());
+        return Ok(result);
+    }
+    result.changed = changed.iter().map(|c| c.0.clone()).collect();
+    let r = crate::live::redefine(&agent_json, changed.iter().map(|c| (c.0.clone(), c.1.clone())).collect()).await?;
+    let failed: std::collections::HashSet<String> =
+        r.errors.iter().filter_map(|e| e.split(':').next().map(str::to_string)).collect();
+    for (name, _, h) in &changed {
+        if !failed.contains(name) {
+            state.sent.insert(name.clone(), h.clone());
+        }
+    }
+    http::write_json(&state_file, &state).await?;
+    if r.needs_restart {
+        result.notes.push("Some changes can't be applied live; they'll take effect after a restart.".into());
+    }
+    result.notes.push("Changed resources (textures, models, lang, data) aren't hotswapped: use F3+T or /reload in game.".into());
+    result.agent = Some(r);
+    p.pending_install = Some(inst.id.clone());
+    save(&p).await?;
+    result.install_queued = true;
+    Ok(result)
+}
+
+/// Install jars of projects that were hotswapped into this instance (called when its game exits).
+pub async fn install_pending(l: &Launcher, instance_id: &str) {
+    let Ok(list) = list(l).await else { return };
+    for mut p in list.into_iter().filter(|p| p.pending_install.as_deref() == Some(instance_id)) {
+        p.pending_install = None;
+        let _ = save(&p).await;
+        match install(l, &p.id, Some(instance_id)).await {
+            Ok(r) if r.success => l.emit(Event::BuildFinished { project_id: p.id.clone(), success: true, message: "Live changes saved to the mod jar".into() }),
+            Ok(_) | Err(_) => l.emit(Event::BuildFinished { project_id: p.id.clone(), success: false, message: "Couldn't save live changes to the mod jar; run install_mod".into() }),
+        }
+    }
 }
 
 pub fn dev_source(id: &str) -> String {

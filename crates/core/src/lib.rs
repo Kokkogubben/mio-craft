@@ -16,6 +16,7 @@ pub mod http;
 pub mod instances;
 pub mod java;
 pub mod launch;
+pub mod live;
 pub mod loaders;
 pub mod maven;
 pub mod modpack;
