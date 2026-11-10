@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, modpack, instances, launch, loaders, mods, mojang, process, projects, Launcher};
+use crate::{auth, browse, claude_code, config, crash, modpack, instances, launch, loaders, mods, mojang, process, projects, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -95,6 +95,8 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}/online-mods", post(install_online))
         .route("/instances/{id}/updates", get(check_updates).post(apply_updates))
         .route("/instances/{id}/export", post(export_pack))
+        .route("/instances/{id}/crash", get(get_crash))
+        .route("/instances/{id}/crash/dismiss", post(dismiss_crash))
         .route(
             "/modpacks/import",
             post(import_pack).layer(axum::extract::DefaultBodyLimit::max(1024 * 1024 * 1024)),
@@ -417,7 +419,11 @@ async fn claude_connect(Json(b): Json<ConnectBody>) -> R<Value> {
 struct OpenBody {
     instance_id: Option<String>,
     project_id: Option<String>,
+    #[serde(default)]
     request: String,
+    /// Ask about the instance's latest crash instead of a new mod.
+    #[serde(default)]
+    crash: bool,
     /// Only build the prompt (for "Copy prompt").
     #[serde(default)]
     dry_run: bool,
@@ -426,10 +432,20 @@ struct OpenBody {
 /// Build the prompt and try to open Claude Code with it. Always returns the
 /// prompt so the UI can offer to copy it if opening fails.
 async fn claude_open(State(s): State<AppState>, Json(b): Json<OpenBody>) -> R<Value> {
-    if b.request.trim().is_empty() {
+    if b.request.trim().is_empty() && !b.crash {
         return Err(anyhow::anyhow!("describe what you want first").into());
     }
     let (prompt, cwd) = match (&b.project_id, &b.instance_id) {
+        (None, Some(iid)) if b.crash => {
+            let i = instances::get(&s.l, iid).await?;
+            let c = crash::latest(&s.l, &i).await?.ok_or_else(|| anyhow::anyhow!("no recent crash for this instance"))?;
+            // Work inside the mod's own project when one of Claude's mods is involved.
+            let cwd = match c.suspects.iter().find_map(|x| x.claude_project.clone()) {
+                Some(pid) => projects::get(&s.l, &pid).await.map(|p| p.path).unwrap_or_else(|_| s.l.paths.projects()),
+                None => s.l.paths.projects(),
+            };
+            (claude_code::crash_prompt(&i, &c), cwd)
+        }
         (Some(pid), _) => {
             let p = projects::get(&s.l, pid).await?;
             (claude_code::project_prompt(&p, &b.request), p.path.clone())
@@ -447,6 +463,16 @@ async fn claude_open(State(s): State<AppState>, Json(b): Json<OpenBody>) -> R<Va
         Ok(()) => Ok(Json(json!({ "opened": true, "prompt": prompt }))),
         Err(e) => Ok(Json(json!({ "opened": false, "prompt": prompt, "error": format!("{e:#}") }))),
     }
+}
+
+async fn get_crash(State(s): State<AppState>, Path(id): Path<String>) -> R<Option<crash::CrashInfo>> {
+    let i = instances::get(&s.l, &id).await?;
+    Ok(Json(crash::latest(&s.l, &i).await?))
+}
+
+async fn dismiss_crash(State(s): State<AppState>, Path(id): Path<String>) -> R<Value> {
+    crash::dismiss(&s.l, &id).await?;
+    Ok(ok())
 }
 
 async fn list_projects(State(s): State<AppState>) -> R<Vec<projects::ModProject>> {

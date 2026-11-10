@@ -99,6 +99,16 @@ const S = {
   busy: new Set<string>(),
   modFilter: "",
   makeIdea: "",
+  crash: null as null | {
+    instance_id: string;
+    at: number;
+    exit_code: number | null;
+    report_path: string | null;
+    description: string | null;
+    exception: string | null;
+    launcher_log: string;
+    suspects: { mod_id: string; name: string; claude_project: string | null }[];
+  },
   updates: { instance: null as string | null, byFile: new Map<string, { title: string; latest: ModVersion }>(), checked: false },
   logs: new Map<string, string[]>(),
   progress: null as null | { task: string; current: number; total: number; message: string },
@@ -169,12 +179,14 @@ async function loadInstances() {
 async function loadInstanceData() {
   const inst = current();
   if (inst) {
-    const [mods, projects] = await Promise.all([
+    const [mods, projects, crash] = await Promise.all([
       api<ModEntry[]>("GET", `/instances/${enc(inst.id)}/mods`),
       api<Project[]>("GET", "/projects"),
+      api("GET", `/instances/${enc(inst.id)}/crash`).catch(() => null),
     ]);
     S.mods = mods;
     S.projects = projects;
+    S.crash = crash;
   } else {
     S.mods = [];
   }
@@ -257,6 +269,7 @@ function renderMain() {
         <button class="btn ${running ? "danger" : "play"}" data-action="${running ? "stop" : "play"}" ${launching ? "disabled" : ""}>${playLabel}</button>
       </div>
     </header>
+    ${crashBanner(inst)}
     <div class="tabs" role="tablist">
       ${(["mods", "browse", "projects", "console"] as Tab[])
         .map((t) => {
@@ -286,6 +299,29 @@ function renderMain() {
 }
 
 let refocus: string | null = null;
+
+function crashBanner(inst: Instance): string {
+  const c = S.crash;
+  if (!c || c.instance_id !== inst.id || S.running.has(`game:${inst.id}`)) return "";
+  const mine = c.suspects.filter((x) => x.claude_project);
+  const others = c.suspects.filter((x) => !x.claude_project);
+  const who = c.suspects.length
+    ? `Involved: ${[...mine.map((x) => `${esc(x.name)} <span class="badge claude">✦ yours</span>`), ...others.map((x) => esc(x.name))].join(", ")}`
+    : "";
+  return `
+    <div class="crash" role="alert">
+      <div class="crash-text">
+        <strong>The game crashed ${ago(c.at)}${c.description ? `: ${esc(c.description)}` : ""}</strong>
+        ${c.exception ? `<code>${esc(c.exception)}</code>` : ""}
+        ${who ? `<div class="small">${who}</div>` : ""}
+      </div>
+      <div class="crash-actions">
+        <button class="btn primary claude-btn" data-action="crash-ask" ${S.busy.has("claude-open") ? "disabled" : ""}>✦ Ask Claude to fix</button>
+        ${c.report_path ? `<button class="btn ghost small" data-action="open-path" data-path="${esc(c.report_path.replace(/[\\/][^\\/]+$/, ""))}">Crash reports</button>` : `<button class="btn ghost small" data-action="tab" data-tab="console">Console</button>`}
+        <button class="icon-btn" data-action="crash-dismiss" title="Dismiss" aria-label="Dismiss">×</button>
+      </div>
+    </div>`;
+}
 
 function updateFor(inst: Instance, m: ModEntry) {
   if (S.updates.instance !== inst.id || !m.online) return null;
@@ -664,7 +700,7 @@ function onEvent(e: any) {
       break;
     case "process_exited":
       S.running.delete(e.source);
-      if (e.source.startsWith("game:") && e.code && e.code !== 0) toast(`The game exited with code ${e.code}. Check the Console tab.`, "err");
+      if (e.source.startsWith("game:") && e.code && e.code !== 0) setTimeout(loadInstanceData, 800);
       renderSidebar();
       renderMain();
       break;
@@ -953,8 +989,8 @@ function instanceModal(inst: Instance) {
   });
 }
 
-async function openClaude(body: { instance_id?: string; project_id?: string; request: string }, dryRun = false) {
-  if (!body.request.trim()) {
+async function openClaude(body: { instance_id?: string; project_id?: string; request: string; crash?: boolean }, dryRun = false) {
+  if (!body.request.trim() && !body.crash) {
     toast("Describe what you want first", "err");
     return;
   }
@@ -1178,6 +1214,16 @@ document.addEventListener("click", async (ev) => {
       busy(`mod:${file}`, () => api("DELETE", `/instances/${enc(inst.id)}/mods/${enc(file)}`));
       break;
     }
+    case "crash-ask":
+      if (inst) openClaude({ instance_id: inst.id, request: "", crash: true });
+      break;
+    case "crash-dismiss":
+      if (inst) {
+        await api("POST", `/instances/${enc(inst.id)}/crash/dismiss`);
+        S.crash = null;
+        renderMain();
+      }
+      break;
     case "make-mod":
       if (inst) openClaude({ instance_id: inst.id, request: S.makeIdea });
       break;

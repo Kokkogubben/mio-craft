@@ -149,6 +149,41 @@ pub fn project_prompt(p: &ModProject, request: &str) -> String {
     )
 }
 
+/// Prompt for diagnosing (and, for Claude's own mods, fixing) a crash.
+pub fn crash_prompt(inst: &Instance, c: &crate::crash::CrashInfo) -> String {
+    let suspects = if c.suspects.is_empty() {
+        "none identified".to_string()
+    } else {
+        c.suspects
+            .iter()
+            .map(|s| match &s.claude_project {
+                Some(p) => format!("{} ({}, made by you: mod project {p})", s.name, s.file_name),
+                None => format!("{} ({})", s.name, s.file_name),
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    let report = c.report_path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none was written".into());
+    format!(
+        "My Minecraft instance \"{name}\" (instance id {id}: Minecraft {mc}, {loader} {lv}) crashed. \
+         Summary: {desc}{exc}. Crash report: {report}. Game log: {game}. Raw launcher output: {out}. \
+         Mods that appear in the stack trace: {suspects}. \
+         Read the crash report and logs (read_game_log with kind crash, game or launcher works too) and find the cause. \
+         If it's in a mod you made (a claude-launcher mod project), fix it, run install_mod, and test with run_dev_client and read_dev_log. \
+         If it's a third-party mod or a conflict between mods, explain the problem and suggest a fix such as update_mods or set_mod_enabled, \
+         but ask me before changing third-party mods. {NO_TOOLS}",
+        name = inst.name,
+        id = inst.id,
+        mc = inst.mc_version,
+        loader = loader_label(inst.loader),
+        lv = inst.loader_version.clone().unwrap_or_default(),
+        desc = c.description.clone().unwrap_or_else(|| "no description".into()),
+        exc = c.exception.as_ref().map(|e| format!(" ({e})")).unwrap_or_default(),
+        game = c.game_log.display(),
+        out = c.launcher_log.display(),
+    )
+}
+
 /// Make text safe as one PowerShell argument inside single quotes, and avoid
 /// Windows PowerShell 5.1 mangling double quotes when passing it to `claude`.
 pub fn ps_quote(s: &str) -> String {
@@ -214,6 +249,8 @@ mod tests {
             ram_mb: None,
             created_at: 0,
             last_played: None,
+            last_exit: None,
+            crash_dismissed_at: None,
         }
     }
 

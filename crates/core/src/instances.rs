@@ -20,6 +20,19 @@ pub struct Instance {
     pub created_at: u64,
     #[serde(default)]
     pub last_played: Option<u64>,
+    /// How the game last exited (set when it stops).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_exit: Option<LastExit>,
+    /// A crash at or before this time has been dismissed in the UI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crash_dismissed_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LastExit {
+    /// None when the launcher stopped the game.
+    pub code: Option<i32>,
+    pub at: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -124,6 +137,8 @@ pub async fn create(l: &Launcher, req: NewInstance) -> Result<Instance> {
         ram_mb: req.ram_mb,
         created_at: now(),
         last_played: None,
+        last_exit: None,
+        crash_dismissed_at: None,
     };
     tokio::fs::create_dir_all(l.paths.mods_dir(&inst.id)).await?;
     save(l, &inst).await?;

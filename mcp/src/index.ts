@@ -386,6 +386,16 @@ server.registerTool(
 );
 
 server.registerTool(
+  "get_crash_info",
+  {
+    description:
+      "Summary of an instance's latest crash: description, first exception, report and log paths, and installed mods that appear in the stack trace (with their mod project id if Claude made them). Returns null if there's no recent crash.",
+    inputSchema: { instance_id: z.string() },
+  },
+  async ({ instance_id }) => run(async () => (await call("GET", `/instances/${enc(instance_id)}/crash`)) ?? "No recent crash."),
+);
+
+server.registerTool(
   "read_game_log",
   {
     description:

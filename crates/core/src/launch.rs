@@ -174,6 +174,10 @@ pub async fn plan(
     Ok(LaunchPlan { java: java::java_bin(&jdk), args, game_dir })
 }
 
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+}
+
 pub fn game_source(instance_id: &str) -> String {
     format!("game:{instance_id}")
 }
@@ -192,23 +196,40 @@ pub async fn launch(l: &Launcher, instance_id: &str, account_id: Option<&str>) -
 
     let mut cmd = tokio::process::Command::new(&plan.java);
     cmd.args(&plan.args).current_dir(&plan.game_dir);
-    let log = l.paths.instance_dir(&inst.id).join("launcher-output.log");
-    process::spawn_tracked(
-        l,
-        &game_source(&inst.id),
-        cmd,
-        log,
-        vec![account.mc_token.clone()],
-    )
-    .await?;
-
-    inst.last_played = Some(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
-    );
+    // Mark the launch before starting, so a crash that happens instantly is
+    // recorded after this, not overwritten by it.
+    inst.last_played = Some(now_secs());
+    inst.last_exit = None;
     instances::save(l, &inst).await?;
+
+    let log = l.paths.instance_dir(&inst.id).join("launcher-output.log");
+    // Record how the game exits so crashes can be shown after a restart.
+    let mut rx = l.events.subscribe();
+    let source = game_source(&inst.id);
+    let watcher = {
+        let (l2, id, source) = (l.clone(), inst.id.clone(), source.clone());
+        tokio::spawn(async move {
+            while let Ok(ev) = rx.recv().await {
+                if let crate::Event::ProcessExited { source: s, code } = ev {
+                    if s == source {
+                        if let Ok(mut i) = instances::get(&l2, &id).await {
+                            i.last_exit = Some(instances::LastExit { code, at: now_secs() });
+                            let _ = instances::save(&l2, &i).await;
+                            if code.map(|c| c != 0).unwrap_or(false) {
+                                l2.emit(crate::Event::InstancesChanged);
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        })
+    };
+    if let Err(e) = process::spawn_tracked(l, &source, cmd, log, vec![account.mc_token.clone()]).await {
+        watcher.abort();
+        return Err(e);
+    }
+
     Ok(())
 }
 

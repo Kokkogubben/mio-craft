@@ -9,6 +9,7 @@ pub mod auth;
 pub mod browse;
 pub mod claude_code;
 pub mod config;
+pub mod crash;
 pub mod events;
 pub mod gradle;
 pub mod http;
