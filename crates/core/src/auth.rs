@@ -21,9 +21,15 @@ pub struct Account {
     /// Minecraft profile UUID (no dashes).
     pub id: String,
     pub name: String,
+    /// Kept in the OS credential store; only written to the file as a fallback.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub refresh_token: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub mc_token: String,
     pub mc_expires_at: u64,
+    /// True when the tokens live in the credential store, not this file.
+    #[serde(default)]
+    pub tokens_in_keyring: bool,
 }
 
 /// What the UI and API see (no tokens).
@@ -38,12 +44,68 @@ fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
 }
 
+fn refresh_key(id: &str) -> String {
+    format!("{id}:refresh")
+}
+fn mc_key(id: &str) -> String {
+    format!("{id}:minecraft")
+}
+
+/// Load accounts with their tokens filled in from the credential store.
+/// Accounts whose tokens are still in the file (older versions, or a store
+/// that was unavailable) are moved into the store on the way.
 pub async fn load_accounts(l: &Launcher) -> Vec<Account> {
-    http::read_json(&l.paths.accounts_file()).await.unwrap_or_default()
+    let mut accounts: Vec<Account> = http::read_json(&l.paths.accounts_file()).await.unwrap_or_default();
+    let mut needs_migration = false;
+    for a in &mut accounts {
+        if a.tokens_in_keyring {
+            let id = a.id.clone();
+            let (r, m) = tokio::task::spawn_blocking(move || {
+                (crate::secrets::get(&refresh_key(&id)), crate::secrets::get(&mc_key(&id)))
+            })
+            .await
+            .unwrap_or((Ok(None), Ok(None)));
+            a.refresh_token = r.ok().flatten().unwrap_or_default();
+            a.mc_token = m.ok().flatten().unwrap_or_default();
+            if a.mc_token.is_empty() {
+                a.mc_expires_at = 0; // force a refresh
+            }
+        } else if !a.refresh_token.is_empty() {
+            needs_migration = true;
+        }
+    }
+    if needs_migration {
+        let _ = save_accounts(l, &accounts).await;
+    }
+    accounts
 }
 
 async fn save_accounts(l: &Launcher, accounts: &[Account]) -> Result<()> {
-    http::write_json(&l.paths.accounts_file(), accounts).await
+    let mut on_disk = Vec::with_capacity(accounts.len());
+    for a in accounts {
+        let (id, r, m) = (a.id.clone(), a.refresh_token.clone(), a.mc_token.clone());
+        let stored = tokio::task::spawn_blocking(move || -> Result<()> {
+            crate::secrets::set(&refresh_key(&id), &r)?;
+            crate::secrets::set(&mc_key(&id), &m)?;
+            Ok(())
+        })
+        .await?;
+        let mut d = a.clone();
+        match stored {
+            Ok(()) => {
+                d.refresh_token.clear();
+                d.mc_token.clear();
+                d.tokens_in_keyring = true;
+            }
+            Err(e) => {
+                // Fall back to the file so sign-in still works.
+                eprintln!("{e:#}; keeping tokens for {} in accounts.json", a.name);
+                d.tokens_in_keyring = false;
+            }
+        }
+        on_disk.push(d);
+    }
+    http::write_json(&l.paths.accounts_file(), &on_disk).await
 }
 
 pub async fn list(l: &Launcher) -> Vec<AccountInfo> {
@@ -63,6 +125,12 @@ pub async fn remove(l: &Launcher, id: &str) -> Result<()> {
     let mut accounts = load_accounts(l).await;
     accounts.retain(|a| a.id != id);
     save_accounts(l, &accounts).await?;
+    let id = id.to_string();
+    let _ = tokio::task::spawn_blocking(move || {
+        crate::secrets::delete(&refresh_key(&id));
+        crate::secrets::delete(&mc_key(&id));
+    })
+    .await;
     l.emit(Event::AccountsChanged);
     Ok(())
 }
@@ -262,6 +330,7 @@ async fn minecraft_from_ms(l: &Launcher, ms_access: &str, refresh: String) -> Re
         refresh_token: refresh,
         mc_token,
         mc_expires_at: now() + expires_in,
+        tokens_in_keyring: false,
     })
 }
 
@@ -314,4 +383,55 @@ pub async fn usable_account(l: &Launcher, id: Option<&str>) -> Result<Account> {
     accounts[idx] = refreshed.clone();
     save_accounts(l, &accounts).await?;
     Ok(refreshed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Paths;
+
+    fn acct(id: &str) -> Account {
+        Account {
+            id: id.into(),
+            name: "Mio".into(),
+            refresh_token: format!("refresh-secret-{id}"),
+            mc_token: format!("mc-secret-{id}"),
+            mc_expires_at: now() + 3600,
+            tokens_in_keyring: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn tokens_stay_out_of_the_file() {
+        crate::secrets::use_memory_store();
+        let dir = tempfile::tempdir().unwrap();
+        let l = Launcher::new(Paths::new(dir.path())).await.unwrap();
+        save_accounts(&l, &[acct("aaa")]).await.unwrap();
+        let file = std::fs::read_to_string(l.paths.accounts_file()).unwrap();
+        assert!(!file.contains("secret"), "{file}");
+        let loaded = load_accounts(&l).await;
+        assert_eq!(loaded[0].refresh_token, "refresh-secret-aaa");
+        assert_eq!(loaded[0].mc_token, "mc-secret-aaa");
+
+        remove(&l, "aaa").await.unwrap();
+        assert!(crate::secrets::get("aaa:refresh").unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn migrates_old_plaintext_files() {
+        crate::secrets::use_memory_store();
+        let dir = tempfile::tempdir().unwrap();
+        let l = Launcher::new(Paths::new(dir.path())).await.unwrap();
+        // What version 0.1 wrote.
+        std::fs::write(
+            l.paths.accounts_file(),
+            serde_json::to_string(&serde_json::json!([{"id":"bbb","name":"Old","refresh_token":"old-refresh","mc_token":"old-mc","mc_expires_at":1}])).unwrap(),
+        )
+        .unwrap();
+        let loaded = load_accounts(&l).await;
+        assert_eq!(loaded[0].refresh_token, "old-refresh");
+        let file = std::fs::read_to_string(l.paths.accounts_file()).unwrap();
+        assert!(!file.contains("old-refresh") && file.contains("tokens_in_keyring"), "{file}");
+        assert_eq!(load_accounts(&l).await[0].mc_token, "old-mc");
+    }
 }
