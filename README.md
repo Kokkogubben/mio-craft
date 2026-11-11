@@ -149,15 +149,8 @@ Testing mods in the dev client needs no account. To **play** an instance you
 need to sign in with a Microsoft account that owns Minecraft: Java Edition.
 Microsoft requires every third-party launcher to use its own Azure app:
 
-1. Go to [portal.azure.com](https://portal.azure.com) → **App registrations** → **New registration**.
-2. Name it (e.g. "MioCraft"). For supported account types choose **Personal Microsoft accounts only**.
-3. Leave the redirect URI empty and register.
-4. In **Authentication**, set **Allow public client flows** to **Yes** and save.
-5. Copy the **Application (client) ID** and paste it into the launcher's **Settings → Azure client ID**.
-6. New apps must be approved for the Minecraft API before sign-in works. Submit
-   your client ID through Mojang's review form (linked from Microsoft's
-   Minecraft launcher documentation). Until approval, sign-in fails at the
-   "Minecraft rejected the sign-in" step.
+Until approval, sign-in fails at the
+"Minecraft rejected the sign-in" step.
 
 ## MCP tools
 
