@@ -1,6 +1,6 @@
 {
   "name": "mio-craft-mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "MCP server that lets Claude Code create, build and install Minecraft mods through MioCraft",
   "license": "MIT",
   "repository": {

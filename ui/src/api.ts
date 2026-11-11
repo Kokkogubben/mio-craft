@@ -85,6 +85,26 @@ export async function openUrl(url: string): Promise<void> {
   else window.open(url, "_blank");
 }
 
+export interface AppUpdate {
+  version: string;
+  current_version: string;
+  notes: string | null;
+}
+
+/** A newer release, or null when up to date (always null outside the installed app). */
+export async function checkUpdate(): Promise<AppUpdate | null> {
+  return inTauri ? invoke<AppUpdate | null>("check_update") : null;
+}
+
+/** Downloads and installs the newest release, then restarts the app. */
+export async function installUpdate(): Promise<void> {
+  if (inTauri) await invoke("install_update");
+}
+
+export async function appVersion(): Promise<string | null> {
+  return inTauri ? invoke<string>("app_version") : null;
+}
+
 export async function mcpServerPath(): Promise<string> {
   if (inTauri) return invoke<string>("mcp_server_path");
   return "<path to>/mio-craft-mcp.mjs";

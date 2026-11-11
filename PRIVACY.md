@@ -15,6 +15,7 @@ MioCraft only talks to the services it needs to do what you ask:
 | Modrinth | Using the mod and shader browser, checking for mod updates, importing modpacks | Your search text, the instance's Minecraft version and loader, and which browser-installed mods to check for updates. Imported modpacks may also download files from GitHub or GitLab |
 | CurseForge | Only if you add a CurseForge API key | The same, plus your API key |
 | Microsoft, Xbox Live and Minecraft services | Signing in and refreshing your session | The tokens Microsoft's sign-in flow requires |
+| GitHub (`github.com`) | At startup and when you press **Check for updates**; downloading an update you accept | A request for this project's latest release |
 | `mc-heads.net` | Showing your player head once you are signed in | Your Minecraft account UUID |
 
 Every request identifies the app as `MioCraft/<version>` with a link to this

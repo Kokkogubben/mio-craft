@@ -32,6 +32,7 @@ MioCraft does three things:
 - **Microsoft account sign-in**, with **tokens kept in Windows Credential Manager**, not in a plain file
 - **Console** tab with the game's log, and a **crash helper**: when the game crashes, a banner shows what went wrong and which mods were involved
 - **First-run setup** that walks through connecting Claude Code, sign-in and CurseForge
+- **Updates itself**: checks GitHub for a new release at startup, asks before installing, and only installs updates signed with the project's key
 - Small: a Tauri app (Rust + a web UI), not Electron
 
 **Mods**
@@ -97,6 +98,14 @@ npm run setup
 npm run dev      # run with hot reload
 npm run build    # make the installer in target/release/bundle/
 ```
+
+`npm run build` signs the installer for the auto-updater, so it needs the
+project's private update key in `TAURI_SIGNING_PRIVATE_KEY` (the release
+workflow gets it from a repository secret). To build your own copy without the
+key, turn `bundle.createUpdaterArtifacts` off in `src-tauri/tauri.conf.json`; a
+fork that wants its own updates should generate its own key with
+`npm run tauri signer generate` and replace `plugins.updater.pubkey` and the
+endpoint.
 
 ### 2. Make an instance and add mods
 

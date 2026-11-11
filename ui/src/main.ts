@@ -1,4 +1,4 @@
-import { api, apiBytes, connect, enc, events, inTauri, mcpServerPath, openPath, openUrl } from "./api";
+import { api, apiBytes, appVersion, checkUpdate, connect, enc, events, inTauri, installUpdate, mcpServerPath, openPath, openUrl } from "./api";
 
 // ---------- types ----------
 
@@ -949,6 +949,7 @@ async function settingsModal() {
           ? `<p class="muted small">The launcher's MCP server needs Node.js. <button class="link" data-action="open-url" data-url="https://nodejs.org/">Install Node.js LTS</button>, then reopen Settings.</p>`
           : `<p><button class="btn primary small" data-action="connect-claude" ${inTauri ? "" : "disabled"}>Connect automatically</button></p>`;
   const status = await api("GET", "/status");
+  const version = await appVersion().catch(() => null);
   const cmd = `claude mcp add --scope user mio-craft -- node "${path}"`;
   openModal(`
     <h2>Settings</h2>
@@ -973,6 +974,11 @@ async function settingsModal() {
       <h3>Game</h3>
       <label class="field"><span>Default memory (MB)</span><input id="set-ram" type="number" min="1024" step="512" class="input" value="${esc(cfg.default_ram_mb)}"/></label>
       <label class="field"><span>Extra Java arguments</span><input id="set-jvm" class="input mono" placeholder="-XX:+UseG1GC" value="${esc((cfg.extra_jvm_args ?? []).join(" "))}"/></label>
+    </section>
+    <section class="settings-sec">
+      <h3>Updates</h3>
+      <p class="muted small">MioCraft ${esc(version ?? status.version)}. It checks GitHub for a new version when it starts and asks before installing.</p>
+      <p><button class="btn small" data-action="check-update" ${inTauri ? "" : "disabled"}>Check for updates</button></p>
     </section>
     <section class="settings-sec">
       <h3>Data folder</h3>
@@ -1484,6 +1490,18 @@ document.addEventListener("click", async (ev) => {
       if (p) askClaudeModal(p);
       break;
     }
+    case "check-update":
+      closeModal();
+      lookForUpdate(true);
+      break;
+    case "install-update":
+      el.setAttribute("disabled", "");
+      el.textContent = "Updating…";
+      installUpdate().catch((e) => {
+        closeModal();
+        toast(String((e as Error).message ?? e), "err");
+      });
+      break;
     case "connect-claude":
       busy("connect", async () => {
         await api("POST", "/claude-code/connect", { mcp_path: await mcpServerPath() });
@@ -1599,6 +1617,30 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape") closeModal();
 });
 
+// ---------- app updates ----------
+
+/** Ask the shell for a newer release and offer it. `manual` reports "up to date" and errors too. */
+async function lookForUpdate(manual: boolean) {
+  try {
+    const u = await checkUpdate();
+    if (!u) {
+      if (manual) toast("MioCraft is up to date");
+      return;
+    }
+    openModal(`
+      <h2>Update available</h2>
+      <p>MioCraft <strong>${esc(u.version)}</strong> is available. You have ${esc(u.current_version)}.</p>
+      ${u.notes ? `<p class="muted small" style="white-space:pre-wrap">${esc(u.notes)}</p>` : ""}
+      <p class="muted small">The update is downloaded from GitHub, its signature is checked, and MioCraft restarts.</p>
+      <div class="modal-actions">
+        <button class="btn ghost" data-action="close-modal">Later</button>
+        <button class="btn primary" data-action="install-update">Update and restart</button>
+      </div>`);
+  } catch (e) {
+    if (manual) toast(`Couldn't check for updates: ${(e as Error).message ?? e}`, "err");
+  }
+}
+
 // ---------- start ----------
 
 (async () => {
@@ -1608,6 +1650,7 @@ document.addEventListener("keydown", (ev) => {
     await Promise.all([loadAccounts(), loadInstances()]);
     const cfg = await api("GET", "/config");
     if (!cfg.onboarded) setupModal(0);
+    else lookForUpdate(false);
   } catch (e) {
     $("#main").innerHTML = `<div class="empty"><h1>Couldn't start</h1><p>${esc((e as Error).message)}</p></div>`;
   }
