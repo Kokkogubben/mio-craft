@@ -162,7 +162,8 @@ async fn status(State(s): State<AppState>) -> R<Value> {
         "data_dir": s.l.paths.root,
         "running": s.l.processes.running().await,
         "signed_in": !auth::load_accounts(&s.l).await.is_empty(),
-        "has_client_id": s.l.config.read().await.ms_client_id.is_some(),
+        "has_client_id": auth::effective_client_id(&s.l).await.is_some(),
+        "has_builtin_client_id": auth::DEFAULT_MS_CLIENT_ID.is_some(),
         "has_curseforge_key": s.l.config.read().await.curseforge_api_key.is_some(),
     })))
 }

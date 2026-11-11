@@ -114,6 +114,7 @@ const S = {
   shaders: NO_SHADERS,
   accounts: [] as Account[],
   hasClientId: false,
+  hasBuiltinClientId: false,
   hasCfKey: false,
   browse: {
     instance: null as string | null,
@@ -233,6 +234,7 @@ async function loadAccounts() {
   const [accounts, status] = await Promise.all([api<Account[]>("GET", "/accounts"), api("GET", "/status")]);
   S.accounts = accounts;
   S.hasClientId = status.has_client_id;
+  S.hasBuiltinClientId = !!status.has_builtin_client_id;
   S.hasCfKey = status.has_curseforge_key;
   (status.running as string[]).forEach((r) => S.running.add(r));
   renderSidebar();
@@ -962,8 +964,8 @@ async function settingsModal() {
     </section>
     <section class="settings-sec">
       <h3>Microsoft sign-in</h3>
-      <p class="muted small">Each launcher needs its own Azure app (client) ID, approved by Mojang for Minecraft sign-in. The README walks through registering one.</p>
-      <label class="field"><span>Azure client ID</span><input id="set-cid" class="input mono" placeholder="00000000-0000-0000-0000-000000000000" value="${esc(cfg.ms_client_id ?? "")}"/></label>
+      <p class="muted small">${S.hasBuiltinClientId ? "MioCraft signs you in with its own Azure app. Leave this empty unless you're developing with your own app ID." : "MioCraft's own Azure app ID is awaiting Mojang's approval, so sign-in isn't available yet. Developers can enter their own approved app ID here."}</p>
+      <label class="field"><span>Azure client ID (optional)</span><input id="set-cid" class="input mono" placeholder="00000000-0000-0000-0000-000000000000" value="${esc(cfg.ms_client_id ?? "")}"/></label>
     </section>
     <section class="settings-sec">
       <h3>Mod browser</h3>
@@ -1009,8 +1011,7 @@ async function settingsModal() {
 
 async function loginModal() {
   if (!S.hasClientId) {
-    toast("Add your Azure client ID in Settings first", "err");
-    settingsModal();
+    toast("Microsoft sign-in isn't available yet: MioCraft's app ID is awaiting Mojang's approval", "err");
     return;
   }
   openModal(`<h2>Sign in with Microsoft</h2><p class="muted">Getting a code…</p>`);
@@ -1067,9 +1068,9 @@ async function instanceModal(inst: Instance) {
     <label class="field"><span>Memory (MB, blank for default)</span><input id="ie-ram" type="number" min="1024" step="512" class="input" value="${esc(inst.ram_mb ?? "")}"/></label>
     <section class="settings-sec live-sec">
       <h3>⚡ Live mode <span class="muted small">applies the next time you press Play</span></h3>
-      ${off ? `<p class="muted small">${esc(status.unsupported_reason)}</p>` : '<p class="muted small">Change the game while it runs. Singleplayer only.</p>'}
+      ${off ? `<p class="muted small">${esc(status.unsupported_reason)}</p>` : '<p class="muted small">Experimental: change the game while it runs. Singleplayer only; back up your world first.</p>'}
       ${toggle("hotswap", "Hotswap code", "Push Claude's code changes into the running game. Uses JetBrains Runtime, downloaded once.")}
-      ${toggle("content_slots", "Content slots", "Add new blocks and items while playing, using pre-registered slots. Stable.")}
+      ${toggle("content_slots", "Content slots", "Add new blocks and items while playing, using pre-registered slots.")}
       ${toggle("in_memory_textures", "Instant textures", "Paint new textures straight into the game. Off: an automatic resource reload (a few seconds) instead.")}
       ${toggle("unfreeze_registries", "Unfreeze registries", "Experimental: register real blocks and items while playing. Can glitch or crash; back up your world first.", "danger-opt")}
       <label class="field slots ${off ? "dim" : ""}"><span>Slots (blocks and items each)</span><input id="lv-slot_count" type="number" min="1" max="256" class="input" value="${esc(L.slot_count)}" ${off ? "disabled" : ""}/></label>
@@ -1197,14 +1198,8 @@ async function setupModal(step = 0) {
     const cfg = await api("GET", "/config");
     body = `
       <h2>Sign-in for playing</h2>
-      <p class="muted">You can test mods right away without an account. To <strong>play</strong> your instances, you'll sign in with a Microsoft account that owns Minecraft, which needs a free Azure app ID:</p>
-      <ol class="steps small">
-        <li>At <button class="link" data-action="open-url" data-url="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade">portal.azure.com → App registrations</button>, register an app for <em>personal Microsoft accounts only</em>.</li>
-        <li>Under <em>Authentication</em>, turn on <em>Allow public client flows</em>.</li>
-        <li>Paste its <em>Application (client) ID</em> below.</li>
-        <li>Submit the ID to Mojang for Minecraft API access (see the README). Sign-in works once it's approved.</li>
-      </ol>
-      <label class="field"><span>Azure client ID</span><input id="setup-cid" class="input mono" placeholder="00000000-0000-0000-0000-000000000000" value="${esc(cfg.ms_client_id ?? "")}"/></label>
+      <p class="muted">You can test mods right away without an account. To <strong>play</strong> your instances, you sign in with a Microsoft account that owns Minecraft: Java Edition.</p>
+      <p class="muted small">${S.hasBuiltinClientId ? "Press <strong>Sign in with Microsoft</strong> in the bottom-left corner whenever you're ready." : "Sign-in isn't available yet: MioCraft's app ID is awaiting Mojang's approval. Everything else works in the meantime."}</p>
       ${nav("Next", { skip: true })}`;
   } else if (name === "curseforge") {
     const cfg = await api("GET", "/config");
@@ -1227,7 +1222,6 @@ async function setupModal(step = 0) {
 
   const root = document.querySelector<HTMLElement>("#modal-root .modal")!;
   const saveStep = async () => {
-    if (name === "account") await api("PATCH", "/config", { ms_client_id: $<HTMLInputElement>("#setup-cid").value });
     if (name === "curseforge") await api("PATCH", "/config", { curseforge_api_key: $<HTMLInputElement>("#setup-cf").value });
   };
   const finish = async () => {

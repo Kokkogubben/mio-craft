@@ -47,7 +47,7 @@ MioCraft does three things:
 
 - **Make a mod with Claude**: describe a mod in the launcher and it opens Claude Code with your idea and the instance ready; "Ask Claude" does the same for changing an existing mod
 - **Ask Claude to fix** on the crash banner opens Claude Code with the crash details
-- **Live mode** (Fabric on Minecraft 26.x): change the game while it runs: hotswap code, add new blocks and items with live textures, and an experimental mode that registers real content mid-game. Each part is a toggle in the instance's settings
+- **Live mode** (experimental, Fabric on Minecraft 26.x): change the game while it runs: hotswap code, add new blocks and items with live textures, and an experimental mode that registers real content mid-game. Each part is a toggle in the instance's settings
 - **Gradle downloaded automatically**, so you don't need to install anything to build mods
 - **MCP server for Claude Code** with 31 tools: create instances and mods, build, install, run a test client, read logs and crash reports
 
@@ -162,11 +162,14 @@ can download it yourself and drop it in the mods folder.
 ### 5. Microsoft sign-in (needed to play)
 
 Testing mods in the dev client needs no account. To **play** an instance you
-need to sign in with a Microsoft account that owns Minecraft: Java Edition.
-Microsoft requires every third-party launcher to use its own Azure app:
+sign in with a Microsoft account that owns Minecraft: Java Edition, using
+**Sign in with Microsoft** in the bottom-left corner.
 
-Until approval, sign-in fails at the
-"Minecraft rejected the sign-in" step.
+Sign-in isn't available yet. Microsoft requires every third-party launcher to
+have its own app ID approved for the Minecraft API, and MioCraft's is awaiting
+that approval. Everything that doesn't need an account works in the meantime.
+Developers with their own approved Azure app can enter its client ID under
+**Settings → Azure client ID**.
 
 ## MCP tools
 
@@ -208,15 +211,19 @@ Set `MIO_CRAFT_HOME` to use a separate data folder while developing (both
 the core and the MCP server respect it).
 ## Live mode
 
+**Experimental.** Live mode has had little real-world testing, and the
+companion mod behind content slots has not yet been verified against a released
+Minecraft 26.x. Expect rough edges and back up your worlds.
+
 Change a game while it runs, without restarting. Open an instance's **Edit**
 dialog; the toggles apply the next time you press Play. Fabric on Minecraft
 26.1+ only (unobfuscated), singleplayer.
 
-| Toggle | What it does | Stability |
+| Toggle | What it does | Risk |
 |---|---|---|
-| **Hotswap code** | Runs the game on JetBrains Runtime with enhanced class redefinition, Mixin's hot-swap agent, and the launcher's agent. `hotswap_mod` (or ⚡ Hotswap on a project) compiles and pushes only changed classes. Adding methods and fields works; code that only runs at startup doesn't re-run. The jar is updated when the game exits. | Stable |
-| **Content slots** | The companion mod pre-registers blank blocks and items (64 of each by default). Claude fills a slot with a name, texture, hardness, light, drops and behaviour code, all live. Behaviour classes reload in a fresh class loader whenever they're recompiled. | Stable |
-| **Instant textures** | Paints new textures straight into the block atlas, in spots reserved at startup. Off: textures go into a resource pack and the game reloads resources automatically (a few seconds). | Stable |
+| **Hotswap code** | Runs the game on JetBrains Runtime with enhanced class redefinition, Mixin's hot-swap agent, and the launcher's agent. `hotswap_mod` (or ⚡ Hotswap on a project) compiles and pushes only changed classes. Adding methods and fields works; code that only runs at startup doesn't re-run. The jar is updated when the game exits. | Experimental |
+| **Content slots** | The companion mod pre-registers blank blocks and items (64 of each by default). Claude fills a slot with a name, texture, hardness, light, drops and behaviour code, all live. Behaviour classes reload in a fresh class loader whenever they're recompiled. | Experimental |
+| **Instant textures** | Paints new textures straight into the block atlas, in spots reserved at startup. Off: textures go into a resource pack and the game reloads resources automatically (a few seconds). | Experimental |
 | **Unfreeze registries** | Experimental. Registers real blocks and items after startup (both threads paused), patches the lookups Minecraft builds from its registries, then reloads resources for the new models. | Can glitch or crash; back up worlds |
 
 Limits of content slots: light changes apply to blocks placed afterwards, the
