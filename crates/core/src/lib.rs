@@ -29,6 +29,7 @@ pub mod platform;
 pub mod process;
 pub mod projects;
 pub mod secrets;
+pub mod shaders;
 pub mod templates;
 
 use std::sync::Arc;

@@ -12,7 +12,7 @@ MioCraft only talks to the services it needs to do what you ask:
 |---|---|---|
 | Mojang (`piston-meta.mojang.com`, `resources.download.minecraft.net`, `libraries.minecraft.net`) | Listing versions, installing an instance | Download requests |
 | Fabric, NeoForge, Adoptium, JetBrains, Gradle | Installing a mod loader, Java or build tools | Download requests |
-| Modrinth | Using the mod browser, checking for mod updates, importing modpacks | Your search text, the instance's Minecraft version and loader, and which browser-installed mods to check for updates. Imported modpacks may also download files from GitHub or GitLab |
+| Modrinth | Using the mod and shader browser, checking for mod updates, importing modpacks | Your search text, the instance's Minecraft version and loader, and which browser-installed mods to check for updates. Imported modpacks may also download files from GitHub or GitLab |
 | CurseForge | Only if you add a CurseForge API key | The same, plus your API key |
 | Microsoft, Xbox Live and Minecraft services | Signing in and refreshing your session | The tokens Microsoft's sign-in flow requires |
 | `mc-heads.net` | Showing your player head once you are signed in | Your Minecraft account UUID |

@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, crash, live, live_content, modpack, instances, launch, loaders, mods, mojang, process, projects, Launcher};
+use crate::{auth, browse, claude_code, config, crash, live, live_content, modpack, instances, launch, loaders, mods, mojang, process, projects, shaders, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -93,6 +93,8 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}/mods/{file}", delete(delete_mod))
         .route("/instances/{id}/mods/{file}/enabled", post(set_mod_enabled))
         .route("/instances/{id}/online-mods", post(install_online))
+        .route("/instances/{id}/shaders", get(list_shaders).post(install_shader))
+        .route("/instances/{id}/shaders/{file}", delete(delete_shader))
         .route("/instances/{id}/updates", get(check_updates).post(apply_updates))
         .route("/instances/{id}/export", post(export_pack))
         .route("/instances/{id}/crash", get(get_crash))
@@ -350,6 +352,8 @@ struct BrowseQuery {
     offset: u64,
     #[serde(default = "default_page")]
     limit: u64,
+    #[serde(default)]
+    kind: browse::Kind,
 }
 fn default_page() -> u64 {
     20
@@ -358,8 +362,11 @@ fn default_page() -> u64 {
 async fn browse_search(State(s): State<AppState>, Path(source): Path<String>, Query(q): Query<BrowseQuery>) -> R<browse::SearchPage> {
     let source = browse::Source::parse(&source)?;
     let inst = instances::get(&s.l, &q.instance_id).await?;
-    let mut page = browse::search(&s.l, source, &inst, &q.q, q.sort, q.offset, q.limit).await?;
-    let tags = browse::prune_tags(&s.l, &inst.id).await;
+    let mut page = browse::search(&s.l, source, q.kind, &inst, &q.q, q.sort, q.offset, q.limit).await?;
+    let tags = match q.kind {
+        browse::Kind::Mod => browse::prune_tags(&s.l, &inst.id).await,
+        browse::Kind::Shader => shaders::load_tags(&s.l, &inst.id).await,
+    };
     let installed: std::collections::HashSet<_> =
         tags.values().filter(|t| t.source == source).map(|t| t.project_id.clone()).collect();
     for h in &mut page.hits {
@@ -371,16 +378,32 @@ async fn browse_search(State(s): State<AppState>, Path(source): Path<String>, Qu
 #[derive(Deserialize)]
 struct VersionsQ {
     instance_id: String,
+    #[serde(default)]
+    kind: browse::Kind,
 }
 
 async fn browse_versions(State(s): State<AppState>, Path((source, pid)): Path<(String, String)>, Query(q): Query<VersionsQ>) -> R<Vec<browse::ModVersion>> {
     let source = browse::Source::parse(&source)?;
     let inst = instances::get(&s.l, &q.instance_id).await?;
-    Ok(Json(browse::versions(&s.l, source, &pid, &inst).await?))
+    Ok(Json(browse::versions(&s.l, source, q.kind, &pid, &inst).await?))
 }
 
 async fn install_online(State(s): State<AppState>, Path(id): Path<String>, Json(req): Json<browse::InstallRequest>) -> R<browse::InstallReport> {
     Ok(Json(browse::install(&s.l, &id, req).await?))
+}
+
+async fn list_shaders(State(s): State<AppState>, Path(id): Path<String>) -> R<shaders::ShaderList> {
+    instances::get(&s.l, &id).await?;
+    Ok(Json(shaders::list(&s.l, &id).await?))
+}
+
+async fn install_shader(State(s): State<AppState>, Path(id): Path<String>, Json(req): Json<browse::InstallRequest>) -> R<browse::InstallReport> {
+    Ok(Json(shaders::install(&s.l, &id, req).await?))
+}
+
+async fn delete_shader(State(s): State<AppState>, Path((id, file)): Path<(String, String)>) -> R<Value> {
+    shaders::delete(&s.l, &id, &file).await?;
+    Ok(ok())
 }
 
 async fn check_updates(State(s): State<AppState>, Path(id): Path<String>) -> R<browse::UpdateCheck> {

@@ -85,6 +85,24 @@ interface Account {
 
 type Tab = "mods" | "browse" | "projects" | "console";
 
+type BrowseKind = "mod" | "shader";
+
+interface ShaderPack {
+  file_name: string;
+  size: number;
+  online: { source: Source; title: string; page_url: string } | null;
+}
+
+interface ShaderList {
+  packs: ShaderPack[];
+  has_loader: boolean;
+  folder: string;
+}
+
+const NO_SHADERS: ShaderList = { packs: [], has_loader: false, folder: "" };
+/** Iris on Modrinth: the mod that loads shader packs. */
+const IRIS_ID = "YL57xq9U";
+
 // ---------- state ----------
 
 const S = {
@@ -93,12 +111,14 @@ const S = {
   tab: "mods" as Tab,
   mods: [] as ModEntry[],
   projects: [] as Project[],
+  shaders: NO_SHADERS,
   accounts: [] as Account[],
   hasClientId: false,
   hasCfKey: false,
   browse: {
     instance: null as string | null,
     source: "modrinth" as Source,
+    kind: "mod" as BrowseKind,
     q: "",
     sort: "relevance",
     hits: [] as Hit[],
@@ -198,8 +218,13 @@ async function loadInstanceData() {
     S.mods = mods;
     S.projects = projects;
     S.crash = crash;
+    S.shaders =
+      inst.loader === "vanilla"
+        ? NO_SHADERS
+        : await api<ShaderList>("GET", `/instances/${enc(inst.id)}/shaders`).catch(() => NO_SHADERS);
   } else {
     S.mods = [];
+    S.shaders = NO_SHADERS;
   }
   renderMain();
 }
@@ -449,6 +474,8 @@ function browseTab(inst: Instance): string {
   }
   const B = S.browse;
   const needsKey = B.source === "curseforge" && !S.hasCfKey;
+  const shader = B.kind === "shader";
+  const noun = shader ? "shader packs" : "mods";
   const results = B.hits
     .map((h) => {
       const key = `get:${h.source}:${h.project_id}`;
@@ -481,26 +508,72 @@ function browseTab(inst: Instance): string {
   return `
     <div class="toolbar wrap">
       <div class="seg small-seg">
+        <button data-action="browse-kind" data-v="mod" class="${shader ? "" : "on"}">Mods</button>
+        <button data-action="browse-kind" data-v="shader" class="${shader ? "on" : ""}">Shaders</button>
+      </div>
+      <div class="seg small-seg">
         <button data-action="browse-source" data-v="modrinth" class="${B.source === "modrinth" ? "on" : ""}">Modrinth</button>
         <button data-action="browse-source" data-v="curseforge" class="${B.source === "curseforge" ? "on" : ""}">CurseForge</button>
       </div>
-      <input id="browse-q" class="input" placeholder="Search ${sourceLabel(B.source)} mods for ${esc(inst.mc_version)} ${loaderLabel(inst.loader)}" value="${esc(B.q)}" data-action="browse-q" ${needsKey ? "disabled" : ""}/>
+      <input id="browse-q" class="input" placeholder="Search ${sourceLabel(B.source)} ${noun} for ${esc(inst.mc_version)}${shader ? "" : " " + loaderLabel(inst.loader)}" value="${esc(B.q)}" data-action="browse-q" ${needsKey ? "disabled" : ""}/>
       <select id="browse-sort" class="input sort" data-action="browse-sort" ${needsKey ? "disabled" : ""}>
         ${[["relevance", "Relevance"], ["downloads", "Downloads"], ["updated", "Recently updated"], ["newest", "Newest"]]
           .map(([v, l]) => `<option value="${v}" ${B.sort === v ? "selected" : ""}>${l}</option>`)
           .join("")}
       </select>
     </div>
+    ${shader ? shaderPanel() : ""}
     ${
       needsKey
         ? `<div class="note">CurseForge needs a free API key. Get one at <button class="link" data-action="open-url" data-url="https://console.curseforge.com/">console.curseforge.com</button>, then add it in <button class="link" data-action="settings">Settings</button>.</div>`
         : B.error
           ? `<div class="note err">${esc(B.error)}</div>`
           : B.hits.length
-            ? `<p class="muted small">Showing mods for Minecraft ${esc(inst.mc_version)} with ${loaderLabel(inst.loader)}. Required dependencies install automatically.</p>
+            ? `<p class="muted small">${shader ? `Showing shader packs for Minecraft ${esc(inst.mc_version)}.` : `Showing mods for Minecraft ${esc(inst.mc_version)} with ${loaderLabel(inst.loader)}. Required dependencies install automatically.`}</p>
                <div class="mod-list">${results}</div>
                ${B.hits.length < B.total ? `<button class="btn ghost more" data-action="browse-more" ${B.loading ? "disabled" : ""}>${B.loading ? "Loading…" : "Load more"}</button>` : ""}`
-            : `<p class="muted pad">${B.loading ? "Searching…" : "No mods found."}</p>`
+            : `<p class="muted pad">${B.loading ? "Searching…" : `No ${noun} found.`}</p>`
+    }`;
+}
+
+function shaderPanel(): string {
+  const sh = S.shaders;
+  const iris = S.busy.has(`get:modrinth:${IRIS_ID}`);
+  const packs = sh.packs
+    .map(
+      (p) => `
+      <div class="mod">
+        <div class="mod-text">
+          <div class="mod-title">
+            <span class="mod-name">${esc(p.online?.title ?? p.file_name.replace(/\.zip$/i, ""))}</span>
+            ${p.online ? `<button class="badge src ${p.online.source}" data-action="open-url" data-url="${esc(p.online.page_url)}" title="Open on ${sourceLabel(p.online.source)}">${sourceLabel(p.online.source)}</button>` : ""}
+          </div>
+          <div class="mod-file">${esc(p.file_name)}${p.size ? ` · ${fmtSize(p.size)}` : ""}</div>
+        </div>
+        <div class="mod-actions">
+          <button class="icon-btn" data-action="delete-shader" data-file="${esc(p.file_name)}" title="Delete" aria-label="Delete shader pack">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+          </button>
+        </div>
+      </div>`,
+    )
+    .join("");
+  return `
+    ${
+      sh.has_loader
+        ? ""
+        : `<div class="note">Shader packs need the <strong>Iris</strong> mod to work. <button class="btn small primary" data-action="install-iris" ${iris ? "disabled" : ""}>${iris ? "Installing…" : "Install Iris"}</button></div>`
+    }
+    ${
+      sh.packs.length
+        ? `<div class="toolbar">
+             <strong>Installed shader packs</strong><span class="muted">${sh.packs.length}</span>
+             <span class="grow"></span>
+             <button class="btn ghost" data-action="open-path" data-path="${esc(sh.folder)}">Open shaderpacks folder</button>
+           </div>
+           <div class="mod-list">${packs}</div>
+           <p class="muted small">Turn a pack on in the game under Options → Video Settings → Shader Packs.</p>`
+        : ""
     }`;
 }
 
@@ -523,7 +596,7 @@ async function runSearch(more: boolean) {
   try {
     const page = await api<{ hits: Hit[]; total: number }>(
       "GET",
-      `/browse/${B.source}/search?instance_id=${enc(inst.id)}&q=${enc(B.q)}&sort=${B.sort}&offset=${more ? B.hits.length : 0}&limit=20`,
+      `/browse/${B.source}/search?instance_id=${enc(inst.id)}&q=${enc(B.q)}&sort=${B.sort}&offset=${more ? B.hits.length : 0}&limit=20&kind=${B.kind}`,
     );
     if (seq !== searchSeq) return;
     B.hits = more ? [...B.hits, ...page.hits] : page.hits;
@@ -544,17 +617,18 @@ async function installOnline(pid: string, versionId?: string) {
   const inst = current();
   if (!inst) return;
   const source = S.browse.source;
+  const shader = S.browse.kind === "shader";
   await busy(`get:${source}:${pid}`, async () => {
     const r = await api<{ installed: string[]; already_installed: string[]; warnings: string[] }>(
       "POST",
-      `/instances/${enc(inst.id)}/online-mods`,
+      `/instances/${enc(inst.id)}/${shader ? "shaders" : "online-mods"}`,
       { source, project_id: pid, version_id: versionId },
     );
     const hit = S.browse.hits.find((h) => h.project_id === pid);
     if (hit) hit.installed = true;
     const deps = r.installed.length - 1;
     if (r.installed.length) toast(`Installed ${hit?.title ?? r.installed[0]}${deps > 0 ? ` and ${deps} dependenc${deps === 1 ? "y" : "ies"}` : ""}`);
-    else toast(`${hit?.title ?? "That mod"} is already installed`);
+    else toast(`${hit?.title ?? (shader ? "That shader pack" : "That mod")} is already installed`);
     r.warnings.forEach((w) => toast(w, "err"));
   });
 }
@@ -565,10 +639,10 @@ async function versionsModal(pid: string, title: string) {
   const source = S.browse.source;
   openModal(`<h2>${esc(title)}</h2><p class="muted">Loading versions…</p>`);
   try {
-    const vs = await api<ModVersion[]>("GET", `/browse/${source}/projects/${enc(pid)}/versions?instance_id=${enc(inst.id)}`);
+    const vs = await api<ModVersion[]>("GET", `/browse/${source}/projects/${enc(pid)}/versions?instance_id=${enc(inst.id)}&kind=${S.browse.kind}`);
     openModal(`
       <h2>${esc(title)}</h2>
-      <p class="muted small">Versions for Minecraft ${esc(inst.mc_version)} with ${loaderLabel(inst.loader)}</p>
+      <p class="muted small">Versions for Minecraft ${esc(inst.mc_version)}${S.browse.kind === "shader" ? "" : ` with ${loaderLabel(inst.loader)}`}</p>
       <div class="versions">
         ${
           vs.length
@@ -1437,6 +1511,33 @@ document.addEventListener("click", async (ev) => {
       S.browse.hits = [];
       runSearch(false);
       break;
+    case "browse-kind":
+      S.browse.kind = el.dataset.v as BrowseKind;
+      S.browse.hits = [];
+      runSearch(false);
+      break;
+    case "delete-shader": {
+      if (!inst) break;
+      const file = el.dataset.file!;
+      if (!confirm(`Delete ${file}?`)) break;
+      busy(`shader:${file}`, async () => {
+        await api("DELETE", `/instances/${enc(inst.id)}/shaders/${enc(file)}`);
+        S.browse.instance = null; // refresh the "Installed" badges
+      });
+      break;
+    }
+    case "install-iris": {
+      if (!inst) break;
+      busy(`get:modrinth:${IRIS_ID}`, async () => {
+        const r = await api<{ installed: string[]; warnings: string[] }>("POST", `/instances/${enc(inst.id)}/online-mods`, {
+          source: "modrinth",
+          project_id: IRIS_ID,
+        });
+        toast(r.installed.length ? `Installed Iris${r.installed.length > 1 ? ` and ${r.installed.length - 1} dependenc${r.installed.length === 2 ? "y" : "ies"}` : ""}` : "Iris is already installed");
+        r.warnings.forEach((w) => toast(w, "err"));
+      });
+      break;
+    }
     case "browse-more":
       runSearch(true);
       break;

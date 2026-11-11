@@ -1,7 +1,8 @@
 # MioCraft
 
 A lightweight, multi-instance Minecraft: Java Edition launcher for Windows, with
-a built-in Modrinth and CurseForge mod browser and Claude Code integration.
+a built-in Modrinth and CurseForge browser for mods and shader packs, and Claude
+Code integration.
 
 **[Download the Windows installer](https://github.com/Kokkogubben/mio-craft/releases/latest)**
 · Source: <https://github.com/Kokkogubben/mio-craft>
@@ -37,6 +38,7 @@ MioCraft does three things:
 
 - **Built-in mod browser** for **Modrinth** and **CurseForge**: results are filtered to the instance's Minecraft version and loader, required dependencies install automatically, and downloads are checked against their checksums
 - **Mod list** per instance: enable/disable, delete, search, and a *Rebuild* button for Claude-made mods
+- **Built-in shader browser**: the same browser has a **Shaders** switch that finds shader packs for the instance's Minecraft version on Modrinth and CurseForge, installs them into its `shaderpacks` folder, lists and removes installed packs, and offers to install **Iris** (the mod that loads them) if it's missing
 - **Mod updates**: check browser-installed mods for newer compatible versions and update one or all
 - **Modpacks**: import Modrinth `.mrpack` files (Fabric and NeoForge) and export instances to share, with Claude's mods included
 
@@ -69,6 +71,7 @@ Data lives in `%APPDATA%\MioCraft`:
 instances/<id>/minecraft/      game folder (mods/, saves/, logs/ …)
 instances/<id>/claude-mods.json which jars in mods/ Claude built
 instances/<id>/online-mods.json which jars came from Modrinth / CurseForge
+instances/<id>/online-shaders.json which shader packs did
 exports/                       exported .mrpack modpacks
 projects/<mod_id>/             mod source code Claude Code edits (has its own CLAUDE.md)
 versions/ libraries/ assets/   shared Minecraft files
@@ -108,6 +111,10 @@ On a Fabric or NeoForge instance, open the **Browse** tab to search Modrinth
 installs the mods it requires. Installed mods appear on the **Mods** tab, where
 you can turn them off, delete them or update them. Vanilla instances can't load
 mods.
+
+For shaders, switch the Browse tab from **Mods** to **Shaders**. If the instance
+doesn't have Iris yet, press **Install Iris** there first. After installing a
+pack, turn it on in the game under Options → Video Settings → Shader Packs.
 
 ### 3. Connect Claude Code
 
@@ -160,7 +167,7 @@ Until approval, sign-in fails at the
 | `list_instances`, `create_instance` | See or make instances (downloads Minecraft, the loader and Java) |
 | `list_minecraft_versions`, `list_loader_versions` | Available versions |
 | `list_mods`, `set_mod_enabled` | An instance's mod list |
-| `search_online_mods`, `install_online_mod` | Find and install Modrinth / CurseForge mods (with required dependencies) |
+| `search_online_mods`, `install_online_mod` | Find and install Modrinth / CurseForge mods (with required dependencies), or shader packs with `kind: "shader"` |
 | `check_mod_updates`, `update_mods` | Update browser-installed mods |
 | `export_modpack` | Export an instance as a `.mrpack` |
 | `list_mod_projects`, `get_mod_project`, `create_mod` | Mod projects from version-matched templates |

@@ -22,6 +22,27 @@ pub fn modrinth_api() -> String {
 pub const CURSEFORGE_API: &str = "https://api.curseforge.com/v1";
 const CF_MINECRAFT: u32 = 432;
 const CF_CLASS_MODS: u32 = 6;
+const CF_CLASS_SHADERS: u32 = 6552;
+
+/// What is being browsed. Shader packs are searched the same way as mods but
+/// are zip files that go in `shaderpacks/` (see `shaders.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    #[default]
+    Mod,
+    Shader,
+}
+
+impl Kind {
+    /// The path segment Modrinth uses in project page links.
+    fn modrinth_path(&self) -> &'static str {
+        match self {
+            Self::Mod => "mod",
+            Self::Shader => "shader",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -178,6 +199,16 @@ pub fn modrinth_facets(mc: &str, loader: &str) -> String {
     .unwrap()
 }
 
+/// Shader packs made for Iris or OptiFine (Iris loads both formats).
+pub fn modrinth_shader_facets(mc: &str) -> String {
+    serde_json::to_string(&vec![
+        vec!["project_type:shader".to_string()],
+        vec!["categories:iris".to_string(), "categories:optifine".to_string()],
+        vec![format!("versions:{mc}")],
+    ])
+    .unwrap()
+}
+
 pub fn parse_modrinth_search(v: &Value, offset: u64) -> SearchPage {
     let hits = v["hits"]
         .as_array()
@@ -252,7 +283,7 @@ pub fn parse_modrinth_versions(v: &Value, project_id: &str) -> Vec<ModVersion> {
         .collect()
 }
 
-async fn modrinth_get(l: &Launcher, url: &str) -> Result<Value> {
+pub(crate) async fn modrinth_get(l: &Launcher, url: &str) -> Result<Value> {
     let resp = l.http.get(url).send().await.with_context(|| format!("contacting Modrinth ({url})"))?;
     if resp.status().as_u16() == 404 {
         bail!("not found on Modrinth");
@@ -382,6 +413,7 @@ pub fn parse_cf_files(v: &Value, project_id: &str) -> Vec<ModVersion> {
 pub async fn search(
     l: &Launcher,
     source: Source,
+    kind: Kind,
     inst: &Instance,
     query: &str,
     sort: Sort,
@@ -393,6 +425,10 @@ pub async fn search(
     match source {
         Source::Modrinth => {
             let loader = loader_name(inst.loader)?;
+            let facets = match kind {
+                Kind::Mod => modrinth_facets(&inst.mc_version, loader),
+                Kind::Shader => modrinth_shader_facets(&inst.mc_version),
+            };
             let index = match sort {
                 Sort::Relevance => "relevance",
                 Sort::Downloads => "downloads",
@@ -403,9 +439,15 @@ pub async fn search(
                 "{}/search?query={}&facets={}&index={index}&offset={offset}&limit={limit}",
                 modrinth_api(),
                 enc(query),
-                enc(&modrinth_facets(&inst.mc_version, loader)),
+                enc(&facets),
             );
-            Ok(parse_modrinth_search(&modrinth_get(l, &url).await?, offset))
+            let mut page = parse_modrinth_search(&modrinth_get(l, &url).await?, offset);
+            if kind != Kind::Mod {
+                for h in &mut page.hits {
+                    h.page_url = format!("https://modrinth.com/{}/{}", kind.modrinth_path(), h.slug);
+                }
+            }
+            Ok(page)
         }
         Source::Curseforge => {
             let lt = cf_loader_type(inst.loader)?;
@@ -418,8 +460,13 @@ pub async fn search(
             };
             // CurseForge caps index + pageSize at 10,000.
             let offset = offset.min(10_000 - limit);
+            // Shader packs aren't tied to a mod loader.
+            let class = match kind {
+                Kind::Mod => format!("classId={CF_CLASS_MODS}&modLoaderType={lt}"),
+                Kind::Shader => format!("classId={CF_CLASS_SHADERS}"),
+            };
             let path = format!(
-                "/mods/search?gameId={CF_MINECRAFT}&classId={CF_CLASS_MODS}&searchFilter={}&gameVersion={}&modLoaderType={lt}&sortField={field}&sortOrder=desc&index={offset}&pageSize={limit}",
+                "/mods/search?gameId={CF_MINECRAFT}&{class}&searchFilter={}&gameVersion={}&sortField={field}&sortOrder=desc&index={offset}&pageSize={limit}",
                 enc(query),
                 enc(&inst.mc_version),
             );
@@ -429,15 +476,19 @@ pub async fn search(
 }
 
 /// Versions of a project that work with the instance, newest first.
-pub async fn versions(l: &Launcher, source: Source, project_id: &str, inst: &Instance) -> Result<Vec<ModVersion>> {
+pub async fn versions(l: &Launcher, source: Source, kind: Kind, project_id: &str, inst: &Instance) -> Result<Vec<ModVersion>> {
     match source {
         Source::Modrinth => {
             let loader = loader_name(inst.loader)?;
+            let loaders = match kind {
+                Kind::Mod => format!("[\"{loader}\"]"),
+                Kind::Shader => "[\"iris\",\"optifine\"]".to_string(),
+            };
             let url = format!(
                 "{}/project/{}/version?loaders={}&game_versions={}",
                 modrinth_api(),
                 urlencode(project_id),
-                urlencode(&format!("[\"{loader}\"]")),
+                urlencode(&loaders),
                 urlencode(&format!("[\"{}\"]", inst.mc_version)),
             );
             Ok(parse_modrinth_versions(&modrinth_get(l, &url).await?, project_id))
@@ -445,8 +496,12 @@ pub async fn versions(l: &Launcher, source: Source, project_id: &str, inst: &Ins
         Source::Curseforge => {
             let lt = cf_loader_type(inst.loader)?;
             let id: u64 = project_id.parse().map_err(|_| anyhow!("CurseForge project ids are numbers"))?;
+            let loader = match kind {
+                Kind::Mod => format!("&modLoaderType={lt}"),
+                Kind::Shader => String::new(),
+            };
             let path = format!(
-                "/mods/{id}/files?gameVersion={}&modLoaderType={lt}&pageSize=50",
+                "/mods/{id}/files?gameVersion={}{loader}&pageSize=50",
                 urlencode(&inst.mc_version)
             );
             Ok(parse_cf_files(&cf_get(l, &path).await?, project_id))
@@ -464,13 +519,14 @@ pub fn pick_version(versions: &[ModVersion]) -> Option<&ModVersion> {
     versions.first()
 }
 
-async fn project_info(l: &Launcher, source: Source, project_id: &str) -> Result<(String, String, String)> {
+pub(crate) async fn project_info(l: &Launcher, source: Source, kind: Kind, project_id: &str) -> Result<(String, String, String)> {
     // (title, slug, page_url)
     match source {
         Source::Modrinth => {
             let v = modrinth_get(l, &format!("{}/project/{}", modrinth_api(), urlencode(project_id))).await?;
             let slug = v["slug"].as_str().unwrap_or(project_id).to_string();
-            Ok((v["title"].as_str().unwrap_or(&slug).to_string(), slug.clone(), format!("https://modrinth.com/mod/{slug}")))
+            let page = format!("https://modrinth.com/{}/{slug}", kind.modrinth_path());
+            Ok((v["title"].as_str().unwrap_or(&slug).to_string(), slug.clone(), page))
         }
         Source::Curseforge => {
             let v = cf_get(l, &format!("/mods/{}", urlencode(project_id))).await?;
@@ -480,7 +536,7 @@ async fn project_info(l: &Launcher, source: Source, project_id: &str) -> Result<
     }
 }
 
-async fn version_by_id(l: &Launcher, source: Source, project_id: &str, version_id: &str, inst: &Instance) -> Result<ModVersion> {
+pub(crate) async fn version_by_id(l: &Launcher, source: Source, kind: Kind, project_id: &str, version_id: &str, inst: &Instance) -> Result<ModVersion> {
     match source {
         Source::Modrinth => {
             let v = modrinth_get(l, &format!("{}/version/{}", modrinth_api(), urlencode(version_id))).await?;
@@ -489,7 +545,7 @@ async fn version_by_id(l: &Launcher, source: Source, project_id: &str, version_i
                 .next()
                 .ok_or_else(|| anyhow!("that Modrinth version has no files"))
         }
-        Source::Curseforge => versions(l, source, project_id, inst)
+        Source::Curseforge => versions(l, source, kind, project_id, inst)
             .await?
             .into_iter()
             .find(|v| v.version_id == version_id)
@@ -550,7 +606,7 @@ async fn install_with(l: &Launcher, instance_id: &str, req: InstallRequest, pref
             break;
         }
         let result: Result<()> = async {
-            let (title, slug, page_url) = project_info(l, source, &pid).await?;
+            let (title, slug, page_url) = project_info(l, source, Kind::Mod, &pid).await?;
             let already = present_projects.contains(&(source, pid.clone()))
                 || present_ids.contains(&slug)
                 || present_ids.contains(&slug.replace('-', "_"));
@@ -565,9 +621,9 @@ async fn install_with(l: &Launcher, instance_id: &str, req: InstallRequest, pref
                 .cloned();
             let version = match (&vid, pre) {
                 (_, Some(p)) => p,
-                (Some(v), None) => version_by_id(l, source, &pid, v, &inst).await?,
+                (Some(v), None) => version_by_id(l, source, Kind::Mod, &pid, v, &inst).await?,
                 (None, None) => {
-                    let all = versions(l, source, &pid, &inst).await?;
+                    let all = versions(l, source, Kind::Mod, &pid, &inst).await?;
                     pick_version(&all)
                         .cloned()
                         .ok_or_else(|| anyhow!("{title} has no version for {} {}", inst.loader.as_str(), inst.mc_version))?
@@ -703,7 +759,7 @@ pub async fn check_updates(l: &Launcher, instance_id: &str) -> Result<UpdateChec
         .map(|(file, tag)| {
             let (l, inst) = (l.clone(), inst.clone());
             async move {
-                let v = versions(&l, tag.source, &tag.project_id, &inst).await;
+                let v = versions(&l, tag.source, Kind::Mod, &tag.project_id, &inst).await;
                 (file, tag, v)
             }
         })
