@@ -32,6 +32,7 @@ MioCraft does three things:
 - **Microsoft account sign-in**, with **tokens kept in Windows Credential Manager**, not in a plain file
 - **Console** tab with the game's log, and a **crash helper**: when the game crashes, a banner shows what went wrong and which mods were involved
 - **First-run setup** that walks through connecting Claude Code, sign-in and CurseForge
+- **Discord status** (optional, off by default): shows the instance you're playing on your Discord profile
 - **Updates itself**: checks GitHub for a new release at startup, asks before installing, and only installs updates signed with the project's key
 - Small: a Tauri app (Rust + a web UI), not Electron
 

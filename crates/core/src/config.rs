@@ -17,6 +17,8 @@ pub struct Config {
     pub curseforge_api_key: Option<String>,
     /// The first-run setup has been finished or skipped.
     pub onboarded: bool,
+    /// Show what is being played on the user's Discord profile.
+    pub discord_rpc: bool,
 }
 
 impl Default for Config {
@@ -28,6 +30,7 @@ impl Default for Config {
             extra_jvm_args: vec![],
             curseforge_api_key: None,
             onboarded: false,
+            discord_rpc: false,
         }
     }
 }
@@ -54,6 +57,7 @@ pub struct ConfigPatch {
     pub extra_jvm_args: Option<Vec<String>>,
     pub curseforge_api_key: Option<String>,
     pub onboarded: Option<bool>,
+    pub discord_rpc: Option<bool>,
 }
 
 impl Config {
@@ -77,6 +81,9 @@ impl Config {
         }
         if let Some(v) = p.onboarded {
             self.onboarded = v;
+        }
+        if let Some(v) = p.discord_rpc {
+            self.discord_rpc = v;
         }
     }
 }

@@ -18,6 +18,8 @@ pub enum Event {
     ModsChanged { instance_id: String },
     ProjectsChanged,
     AccountsChanged,
+    /// Settings were saved.
+    ConfigChanged,
     LoginCode {
         user_code: String,
         verification_uri: String,

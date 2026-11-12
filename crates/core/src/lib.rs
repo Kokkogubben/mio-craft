@@ -11,6 +11,7 @@ pub mod claude_code;
 pub mod companion;
 pub mod config;
 pub mod crash;
+pub mod discord;
 pub mod events;
 pub mod gradle;
 pub mod http;

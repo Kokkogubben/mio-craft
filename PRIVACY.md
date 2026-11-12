@@ -16,6 +16,7 @@ MioCraft only talks to the services it needs to do what you ask:
 | CurseForge | Only if you add a CurseForge API key | The same, plus your API key |
 | Microsoft, Xbox Live and Minecraft services | Signing in and refreshing your session | The tokens Microsoft's sign-in flow requires |
 | GitHub (`github.com`) | At startup and when you press **Check for updates**; downloading an update you accept | A request for this project's latest release |
+| Discord (the app on your computer) | Only if you turn on **Show what I'm playing** in Settings, while a game or test client is running | The name of the instance or mod project, its Minecraft version and mod loader, and when it started. Discord shows this on your profile |
 | `mc-heads.net` | Showing your player head once you are signed in | Your Minecraft account UUID |
 
 Every request identifies the app as `MioCraft/<version>` with a link to this

@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, crash, live, live_content, modpack, instances, launch, loaders, mods, mojang, process, projects, shaders, Launcher};
+use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, modpack, instances, launch, loaders, mods, mojang, process, projects, shaders, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -145,6 +145,7 @@ pub async fn serve(l: Launcher) -> Result<ApiInfo> {
         version: env!("CARGO_PKG_VERSION").into(),
     };
     crate::http::write_json(&l.paths.api_file(), &info).await?;
+    discord::start(&l);
     let app = router(l, token);
     tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, app).await {
@@ -164,6 +165,7 @@ async fn status(State(s): State<AppState>) -> R<Value> {
         "signed_in": !auth::load_accounts(&s.l).await.is_empty(),
         "has_client_id": auth::effective_client_id(&s.l).await.is_some(),
         "has_builtin_client_id": auth::DEFAULT_MS_CLIENT_ID.is_some(),
+        "has_discord_app_id": discord::DISCORD_APP_ID.is_some(),
         "has_curseforge_key": s.l.config.read().await.curseforge_api_key.is_some(),
     })))
 }
@@ -176,6 +178,7 @@ async fn patch_config(State(s): State<AppState>, Json(p): Json<config::ConfigPat
     let mut c = s.l.config.write().await;
     c.apply(p);
     c.save(&s.l.paths).await?;
+    s.l.emit(crate::Event::ConfigChanged);
     Ok(Json(c.clone()))
 }
 

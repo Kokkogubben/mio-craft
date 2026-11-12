@@ -978,6 +978,13 @@ async function settingsModal() {
       <label class="field"><span>Extra Java arguments</span><input id="set-jvm" class="input mono" placeholder="-XX:+UseG1GC" value="${esc((cfg.extra_jvm_args ?? []).join(" "))}"/></label>
     </section>
     <section class="settings-sec">
+      <h3>Discord</h3>
+      <label class="live-opt">
+        <span class="switch"><input type="checkbox" id="set-discord" ${cfg.discord_rpc && status.has_discord_app_id ? "checked" : ""} ${status.has_discord_app_id ? "" : "disabled"}/><span></span></span>
+        <span><strong>Show what I'm playing</strong><span class="muted small">${status.has_discord_app_id ? "Shows the instance name, Minecraft version and mod loader on your Discord profile while a game or test client is running. Discord has to be open." : "This build of MioCraft has no Discord app ID, so it can't show a status on Discord."}</span></span>
+      </label>
+    </section>
+    <section class="settings-sec">
       <h3>Updates</h3>
       <p class="muted small">MioCraft ${esc(version ?? status.version)}. It checks GitHub for a new version when it starts and asks before installing.</p>
       <p><button class="btn small" data-action="check-update" ${inTauri ? "" : "disabled"}>Check for updates</button></p>
@@ -997,6 +1004,7 @@ async function settingsModal() {
         default_ram_mb: Number($<HTMLInputElement>("#set-ram").value) || 4096,
         extra_jvm_args: $<HTMLInputElement>("#set-jvm").value.split(/\s+/).filter(Boolean),
         curseforge_api_key: $<HTMLInputElement>("#set-cf").value,
+        discord_rpc: $<HTMLInputElement>("#set-discord").checked,
       });
       closeModal();
       await loadAccounts();
