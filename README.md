@@ -165,10 +165,11 @@ Testing mods in the dev client needs no account. To **play** an instance you
 sign in with a Microsoft account that owns Minecraft: Java Edition, using
 **Sign in with Microsoft** in the bottom-left corner.
 
-Sign-in isn't available yet. Microsoft requires every third-party launcher to
-have its own app ID approved for the Minecraft API, and MioCraft's is awaiting
-that approval. Everything that doesn't need an account works in the meantime.
-Developers with their own approved Azure app can enter its client ID under
+The launcher shows a short code and opens Microsoft's sign-in page in your
+browser; you enter the code there and MioCraft never sees your password.
+MioCraft signs you in with its own app ID, which Mojang has approved for the
+Minecraft API, so there is nothing to set up. Developers working on a fork can
+use their own approved Azure app instead by entering its client ID under
 **Settings → Azure client ID**.
 
 ## MCP tools

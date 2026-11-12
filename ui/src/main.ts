@@ -964,7 +964,7 @@ async function settingsModal() {
     </section>
     <section class="settings-sec">
       <h3>Microsoft sign-in</h3>
-      <p class="muted small">${S.hasBuiltinClientId ? "MioCraft signs you in with its own Azure app. Leave this empty unless you're developing with your own app ID." : "MioCraft's own Azure app ID is awaiting Mojang's approval, so sign-in isn't available yet. Developers can enter their own approved app ID here."}</p>
+      <p class="muted small">${S.hasBuiltinClientId ? "MioCraft signs you in with its own Azure app. Leave this empty unless you're developing with your own app ID." : "This build of MioCraft has no Microsoft app ID, so sign-in isn't available. Enter an Azure app ID that Mojang has approved here."}</p>
       <label class="field"><span>Azure client ID (optional)</span><input id="set-cid" class="input mono" placeholder="00000000-0000-0000-0000-000000000000" value="${esc(cfg.ms_client_id ?? "")}"/></label>
     </section>
     <section class="settings-sec">
@@ -1011,7 +1011,7 @@ async function settingsModal() {
 
 async function loginModal() {
   if (!S.hasClientId) {
-    toast("Microsoft sign-in isn't available yet: MioCraft's app ID is awaiting Mojang's approval", "err");
+    toast("This build of MioCraft has no Microsoft app ID: add one in Settings to sign in", "err");
     return;
   }
   openModal(`<h2>Sign in with Microsoft</h2><p class="muted">Getting a code…</p>`);
@@ -1199,7 +1199,7 @@ async function setupModal(step = 0) {
     body = `
       <h2>Sign-in for playing</h2>
       <p class="muted">You can test mods right away without an account. To <strong>play</strong> your instances, you sign in with a Microsoft account that owns Minecraft: Java Edition.</p>
-      <p class="muted small">${S.hasBuiltinClientId ? "Press <strong>Sign in with Microsoft</strong> in the bottom-left corner whenever you're ready." : "Sign-in isn't available yet: MioCraft's app ID is awaiting Mojang's approval. Everything else works in the meantime."}</p>
+      <p class="muted small">${S.hasBuiltinClientId ? "Press <strong>Sign in with Microsoft</strong> in the bottom-left corner whenever you're ready." : "This build of MioCraft has no Microsoft app ID, so sign-in isn't available. Everything else works without it."}</p>
       ${nav("Next", { skip: true })}`;
   } else if (name === "curseforge") {
     const cfg = await api("GET", "/config");

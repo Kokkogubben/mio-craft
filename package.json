@@ -1,6 +1,6 @@
 {
   "name": "mio-craft",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "A lightweight Minecraft launcher that Claude Code can build mods for",
   "license": "MIT",

@@ -17,9 +17,9 @@ const MC_PROFILE: &str = "https://api.minecraftservices.com/minecraft/profile";
 const SCOPE: &str = "XboxLive.signin offline_access";
 
 /// MioCraft's own Azure app (client) ID, used unless Settings has another one.
-/// Client IDs of public desktop apps are not secrets. `None` until the app is
-/// approved by Mojang for the Minecraft API.
-pub const DEFAULT_MS_CLIENT_ID: Option<&str> = None;
+/// Client IDs of public desktop apps are not secrets. Mojang has to approve an
+/// app ID for the Minecraft API before sign-in works with it.
+pub const DEFAULT_MS_CLIENT_ID: Option<&str> = Some("67cd794d-cb7f-497f-b46d-bf2371cff221");
 
 /// The client ID sign-in will use: the one from Settings, else the built-in one.
 pub async fn effective_client_id(l: &Launcher) -> Option<String> {
@@ -148,8 +148,8 @@ pub async fn remove(l: &Launcher, id: &str) -> Result<()> {
 async fn client_id(l: &Launcher) -> Result<String> {
     effective_client_id(l).await.ok_or_else(|| {
         anyhow!(
-            "Microsoft sign-in isn't available yet: MioCraft's app ID is awaiting Mojang's approval. \
-             Developers can add their own approved Azure client ID in Settings."
+            "This build of MioCraft has no Microsoft app ID, so sign-in isn't available. \
+             Add an Azure client ID that Mojang has approved in Settings."
         )
     })
 }
