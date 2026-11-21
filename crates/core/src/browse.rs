@@ -172,28 +172,50 @@ pub async fn prune_tags(l: &Launcher, instance_id: &str) -> OnlineTags {
     tags
 }
 
-fn loader_name(loader: Loader) -> Result<&'static str> {
-    match loader {
-        Loader::Fabric => Ok("fabric"),
-        Loader::Neoforge => Ok("neoforge"),
-        Loader::Vanilla => bail!("vanilla instances can't load mods; create a Fabric or NeoForge instance"),
+/// Which mods an instance's loader can run, as Modrinth loader tags and
+/// CurseForge loader types (1 Forge, 4 Fabric, 5 Quilt, 6 NeoForge). Quilt
+/// also runs Fabric mods, and most Legacy Fabric mods are tagged Fabric.
+pub struct ModLoaders {
+    pub modrinth: &'static [&'static str],
+    pub curseforge: &'static [u32],
+    /// CurseForge's names for those types, as they appear in a file's `gameVersions`.
+    pub curseforge_names: &'static [&'static str],
+}
+
+pub fn mod_loaders(loader: Loader) -> Result<ModLoaders> {
+    let (modrinth, curseforge, curseforge_names): (&'static [&'static str], &'static [u32], &'static [&'static str]) = match loader {
+        Loader::Fabric => (&["fabric"], &[4], &["Fabric"]),
+        Loader::Quilt => (&["quilt", "fabric"], &[5, 4], &["Quilt", "Fabric"]),
+        Loader::LegacyFabric => (&["legacy-fabric", "fabric"], &[4], &["Fabric"]),
+        Loader::Neoforge => (&["neoforge"], &[6], &["NeoForge"]),
+        Loader::Forge => (&["forge"], &[1], &["Forge"]),
+        Loader::Vanilla => bail!("vanilla instances can't load mods; create an instance with a mod loader"),
+    };
+    Ok(ModLoaders { modrinth, curseforge, curseforge_names })
+}
+
+/// CurseForge's search filter for a set of loader types.
+fn cf_loader_filter(types: &[u32]) -> String {
+    match types {
+        [one] => format!("&modLoaderType={one}"),
+        many => format!("&modLoaderTypes={}", urlencode(&format!("[{}]", many.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(",")))),
     }
 }
 
-fn cf_loader_type(loader: Loader) -> Result<u32> {
-    match loader {
-        Loader::Fabric => Ok(4),
-        Loader::Neoforge => Ok(6),
-        Loader::Vanilla => bail!("vanilla instances can't load mods; create a Fabric or NeoForge instance"),
-    }
+/// Keep CurseForge files tagged with one of `names` (or with no loader at all).
+fn cf_file_matches(f: &Value, names: &[&str]) -> bool {
+    const ALL: [&str; 6] = ["Forge", "Fabric", "Quilt", "NeoForge", "LiteLoader", "Cauldron"];
+    let Some(tags) = f["gameVersions"].as_array() else { return true };
+    let tags: Vec<&str> = tags.iter().filter_map(|t| t.as_str()).collect();
+    !tags.iter().any(|t| ALL.contains(t)) || tags.iter().any(|t| names.contains(t))
 }
 
 // ---------- Modrinth ----------
 
-pub fn modrinth_facets(mc: &str, loader: &str) -> String {
+pub fn modrinth_facets(mc: &str, loaders: &[&str]) -> String {
     serde_json::to_string(&vec![
         vec!["project_type:mod".to_string()],
-        vec![format!("categories:{loader}")],
+        loaders.iter().map(|l| format!("categories:{l}")).collect(),
         vec![format!("versions:{mc}")],
     ])
     .unwrap()
@@ -424,9 +446,9 @@ pub async fn search(
     let enc = |s: &str| urlencode(s);
     match source {
         Source::Modrinth => {
-            let loader = loader_name(inst.loader)?;
+            let loaders = mod_loaders(inst.loader)?;
             let facets = match kind {
-                Kind::Mod => modrinth_facets(&inst.mc_version, loader),
+                Kind::Mod => modrinth_facets(&inst.mc_version, loaders.modrinth),
                 Kind::Shader => modrinth_shader_facets(&inst.mc_version),
             };
             let index = match sort {
@@ -450,7 +472,7 @@ pub async fn search(
             Ok(page)
         }
         Source::Curseforge => {
-            let lt = cf_loader_type(inst.loader)?;
+            let lt = cf_loader_filter(mod_loaders(inst.loader)?.curseforge);
             // 1 Featured, 2 Popularity, 3 LastUpdated, 6 TotalDownloads, 11 ReleasedDate
             let field = match sort {
                 Sort::Relevance => if query.trim().is_empty() { 2 } else { 1 },
@@ -462,7 +484,7 @@ pub async fn search(
             let offset = offset.min(10_000 - limit);
             // Shader packs aren't tied to a mod loader.
             let class = match kind {
-                Kind::Mod => format!("classId={CF_CLASS_MODS}&modLoaderType={lt}"),
+                Kind::Mod => format!("classId={CF_CLASS_MODS}{lt}"),
                 Kind::Shader => format!("classId={CF_CLASS_SHADERS}"),
             };
             let path = format!(
@@ -479,9 +501,9 @@ pub async fn search(
 pub async fn versions(l: &Launcher, source: Source, kind: Kind, project_id: &str, inst: &Instance) -> Result<Vec<ModVersion>> {
     match source {
         Source::Modrinth => {
-            let loader = loader_name(inst.loader)?;
+            let ml = mod_loaders(inst.loader)?;
             let loaders = match kind {
-                Kind::Mod => format!("[\"{loader}\"]"),
+                Kind::Mod => serde_json::to_string(ml.modrinth)?,
                 Kind::Shader => "[\"iris\",\"optifine\"]".to_string(),
             };
             let url = format!(
@@ -494,17 +516,24 @@ pub async fn versions(l: &Launcher, source: Source, kind: Kind, project_id: &str
             Ok(parse_modrinth_versions(&modrinth_get(l, &url).await?, project_id))
         }
         Source::Curseforge => {
-            let lt = cf_loader_type(inst.loader)?;
+            let ml = mod_loaders(inst.loader)?;
             let id: u64 = project_id.parse().map_err(|_| anyhow!("CurseForge project ids are numbers"))?;
-            let loader = match kind {
-                Kind::Mod => format!("&modLoaderType={lt}"),
-                Kind::Shader => String::new(),
+            // The files endpoint takes one loader type; with several, filter here.
+            let loader = match (kind, ml.curseforge) {
+                (Kind::Mod, [one]) => format!("&modLoaderType={one}"),
+                _ => String::new(),
             };
             let path = format!(
                 "/mods/{id}/files?gameVersion={}{loader}&pageSize=50",
                 urlencode(&inst.mc_version)
             );
-            Ok(parse_cf_files(&cf_get(l, &path).await?, project_id))
+            let mut files = cf_get(l, &path).await?;
+            if kind == Kind::Mod && ml.curseforge.len() > 1 {
+                if let Some(arr) = files["data"].as_array_mut() {
+                    arr.retain(|f| cf_file_matches(f, ml.curseforge_names));
+                }
+            }
+            Ok(parse_cf_files(&files, project_id))
         }
     }
 }
@@ -581,7 +610,7 @@ pub async fn install(l: &Launcher, instance_id: &str, req: InstallRequest) -> Re
 async fn install_with(l: &Launcher, instance_id: &str, req: InstallRequest, prefetched: Option<ModVersion>) -> Result<InstallReport> {
     let source = Source::parse(&req.source)?;
     let inst = instances::get(l, instance_id).await?;
-    loader_name(inst.loader)?;
+    mod_loaders(inst.loader)?;
     if l.processes.is_running(&crate::launch::game_source(&inst.id)).await {
         bail!("stop the game before adding mods");
     }
@@ -735,7 +764,7 @@ pub fn newer_version<'a>(versions: &'a [ModVersion], current: &str) -> Option<&'
 
 pub async fn check_updates(l: &Launcher, instance_id: &str) -> Result<UpdateCheck> {
     let inst = instances::get(l, instance_id).await?;
-    loader_name(inst.loader)?;
+    mod_loaders(inst.loader)?;
     let tags = prune_tags(l, &inst.id).await;
     let has_cf_key = l.config.read().await.curseforge_api_key.is_some();
     let mut warnings = vec![];
@@ -857,7 +886,7 @@ mod tests {
     #[test]
     fn facets() {
         assert_eq!(
-            modrinth_facets("1.21.1", "fabric"),
+            modrinth_facets("1.21.1", &["fabric"]),
             r#"[["project_type:mod"],["categories:fabric"],["versions:1.21.1"]]"#
         );
         assert_eq!(urlencode("a b&c"), "a%20b%26c");

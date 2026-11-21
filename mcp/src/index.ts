@@ -109,8 +109,8 @@ server.registerTool(
 server.registerTool(
   "list_loader_versions",
   {
-    description: "List Fabric loader or NeoForge versions available for a Minecraft version.",
-    inputSchema: { loader: z.enum(["fabric", "neoforge"]), mc_version: z.string() },
+    description: "List versions of a mod loader (Fabric, NeoForge, Forge, Quilt or Legacy Fabric) available for a Minecraft version. Empty when the loader doesn't support that version.",
+    inputSchema: { loader: z.enum(["fabric", "neoforge", "forge", "quilt", "legacyfabric"]), mc_version: z.string() },
   },
   async ({ loader, mc_version }) =>
     run(async () => {
@@ -127,8 +127,10 @@ server.registerTool(
     inputSchema: {
       name: z.string().optional(),
       mc_version: z.string().describe("e.g. 1.21.1"),
-      loader: z.enum(["fabric", "neoforge", "vanilla"]),
-      loader_version: z.string().optional().describe("Defaults to the latest stable version"),
+      loader: z
+        .enum(["fabric", "neoforge", "forge", "quilt", "legacyfabric", "vanilla"])
+        .describe("legacyfabric is Fabric for Minecraft 1.3 to 1.13.2. Claude's mod templates (create_mod) only exist for fabric and neoforge"),
+      loader_version: z.string().optional().describe("Defaults to the recommended or latest stable version. For Forge, just the Forge part (e.g. 47.4.28)"),
       install: z.boolean().optional().describe("Default true"),
     },
   },
@@ -284,7 +286,7 @@ server.registerTool(
   "create_mod",
   {
     description:
-      "Create a new mod project for an instance, from a Fabric or NeoForge template matching the instance's Minecraft version. Returns the source folder: edit files there, starting with its CLAUDE.md.",
+      "Create a new mod project for a Fabric or NeoForge instance (Forge, Quilt and Legacy Fabric instances have no template), from a template matching the instance's Minecraft version. Returns the source folder: edit files there, starting with its CLAUDE.md.",
     inputSchema: {
       instance_id: z.string(),
       mod_id: z.string().describe("lowercase a-z, 0-9, _ ; e.g. glowing_ores"),

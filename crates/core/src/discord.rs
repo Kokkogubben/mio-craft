@@ -61,12 +61,7 @@ impl Activity {
 }
 
 fn version_line(mc_version: &str, loader: Loader) -> String {
-    let loader = match loader {
-        Loader::Vanilla => "Vanilla",
-        Loader::Fabric => "Fabric",
-        Loader::Neoforge => "NeoForge",
-    };
-    clip(format!("Minecraft {mc_version} · {loader}"))
+    clip(format!("Minecraft {mc_version} · {}", loader.display_name()))
 }
 
 fn clip(s: String) -> String {

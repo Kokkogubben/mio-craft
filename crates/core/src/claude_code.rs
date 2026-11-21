@@ -109,9 +109,8 @@ pub async fn connect(mcp_script: &str) -> Result<()> {
 
 fn loader_label(l: Loader) -> &'static str {
     match l {
-        Loader::Fabric => "Fabric",
-        Loader::Neoforge => "NeoForge",
         Loader::Vanilla => "vanilla",
+        other => other.display_name(),
     }
 }
 

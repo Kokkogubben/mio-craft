@@ -6,7 +6,7 @@ interface Instance {
   id: string;
   name: string;
   mc_version: string;
-  loader: "vanilla" | "fabric" | "neoforge";
+  loader: "vanilla" | "fabric" | "neoforge" | "forge" | "quilt" | "legacyfabric";
   loader_version: string | null;
   installed: boolean;
   running: boolean;
@@ -156,9 +156,35 @@ function esc(s: unknown): string {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
+const LOADER_LABELS: Record<string, string> = {
+  fabric: "Fabric",
+  neoforge: "NeoForge",
+  forge: "Forge",
+  quilt: "Quilt",
+  legacyfabric: "Legacy Fabric",
+  vanilla: "Vanilla",
+};
+
 function loaderLabel(l: string): string {
-  return l === "neoforge" ? "NeoForge" : l === "fabric" ? "Fabric" : "Vanilla";
+  return LOADER_LABELS[l] ?? l;
 }
+
+/** Why a loader has no builds for a Minecraft version (mirrors the core's message). */
+function loaderUnsupported(loader: string, mc: string): string {
+  switch (loader) {
+    case "neoforge":
+      return "NeoForge supports Minecraft 1.20.2 and newer.";
+    case "legacyfabric":
+      return `Legacy Fabric supports Minecraft 1.3 to 1.13.2, not ${mc}.`;
+    case "fabric":
+      return `Fabric doesn't support Minecraft ${mc}. For 1.13.2 and older, use Legacy Fabric.`;
+    default:
+      return `${loaderLabel(loader)} has no builds for Minecraft ${mc}.`;
+  }
+}
+
+/** Claude's mod templates exist for these loaders only. */
+const TEMPLATE_LOADERS = ["fabric", "neoforge"];
 
 function fmtSize(b: number): string {
   if (b > 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
@@ -410,7 +436,7 @@ function projectsFor(inst: Instance) {
 
 function modsTab(inst: Instance): string {
   if (inst.loader === "vanilla") {
-    return `<div class="note">Vanilla instances can't load mods. Create a Fabric or NeoForge instance to use mods.</div>`;
+    return `<div class="note">Vanilla instances can't load mods. Create an instance with a mod loader to use mods.</div>`;
   }
   const f = S.modFilter.toLowerCase();
   const mods = S.mods.filter((m) => !f || `${m.name} ${m.mod_id} ${m.file_name} ${m.description}`.toLowerCase().includes(f));
@@ -472,7 +498,7 @@ function fmtCount(n: number): string {
 
 function browseTab(inst: Instance): string {
   if (inst.loader === "vanilla") {
-    return `<div class="note">Vanilla instances can't load mods. Create a Fabric or NeoForge instance to browse mods.</div>`;
+    return `<div class="note">Vanilla instances can't load mods. Create an instance with a mod loader to browse mods.</div>`;
   }
   const B = S.browse;
   const needsKey = B.source === "curseforge" && !S.hasCfKey;
@@ -706,6 +732,9 @@ function projectsTab(inst: Instance): string {
   if (inst.loader === "vanilla") {
     return `<div class="note">Vanilla instances can't load mods. Create a Fabric or NeoForge instance to make mods with Claude.</div>`;
   }
+  if (!TEMPLATE_LOADERS.includes(inst.loader)) {
+    return `<div class="note">Claude's mod templates are for Fabric and NeoForge instances. To make a mod with Claude, create a Fabric or NeoForge instance; ${loaderLabel(inst.loader)} instances can still use mods from the Browse tab.</div>`;
+  }
   const opening = S.busy.has("claude-open");
   return `
     <div class="make">
@@ -837,8 +866,8 @@ async function newInstanceModal() {
     <h2>New instance</h2>
     <label class="field"><span>Name</span><input id="ni-name" class="input" placeholder="My modpack"/></label>
     <div class="field"><span>Mod loader</span>
-      <div class="seg" id="ni-loader">
-        <button data-v="fabric" class="on">Fabric</button><button data-v="neoforge">NeoForge</button><button data-v="vanilla">Vanilla</button>
+      <div class="seg wrap" id="ni-loader">
+        <button data-v="fabric" class="on">Fabric</button><button data-v="neoforge">NeoForge</button><button data-v="forge">Forge</button><button data-v="quilt">Quilt</button><button data-v="legacyfabric" title="Fabric for Minecraft 1.3 to 1.13.2">Legacy Fabric</button><button data-v="vanilla">Vanilla</button>
       </div>
     </div>
     <div class="row">
@@ -867,14 +896,21 @@ async function newInstanceModal() {
     lv.disabled = true;
     lv.innerHTML = "<option>Loading…</option>";
     try {
-      const v = await api<{ version: string; stable: boolean }[]>("GET", `/loaders/${loader}/${enc(mc.value)}`);
+      const v = await api<{ version: string; stable: boolean; recommended: boolean }[]>("GET", `/loaders/${loader}/${enc(mc.value)}`);
       if (!v.length) {
         lv.innerHTML = "<option value=''>Not available</option>";
-        hint.textContent = loader === "neoforge" ? "NeoForge supports Minecraft 1.20.2 and newer." : `Fabric doesn't support ${mc.value}.`;
+        hint.textContent = loaderUnsupported(loader, mc.value);
         return;
       }
-      const firstStable = v.find((x) => x.stable)?.version ?? v[0].version;
-      lv.innerHTML = v.slice(0, 40).map((x) => `<option value="${esc(x.version)}" ${x.version === firstStable ? "selected" : ""}>${esc(x.version)}${x.stable ? "" : " (beta)"}</option>`).join("");
+      const pick = (v.find((x) => x.recommended) ?? v.find((x) => x.stable) ?? v[0]).version;
+      const label = (x: { version: string; stable: boolean; recommended: boolean }) => (x.recommended ? " (recommended)" : x.stable ? "" : " (beta)");
+      // Keep the picked version in the list even when it's older than the newest 40.
+      const shown = v.slice(0, 40);
+      if (!shown.some((x) => x.version === pick)) shown.push(v.find((x) => x.version === pick)!);
+      lv.innerHTML = shown.map((x) => `<option value="${esc(x.version)}" ${x.version === pick ? "selected" : ""}>${esc(x.version)}${label(x)}</option>`).join("");
+      if (loader === "forge" || loader === "quilt" || loader === "legacyfabric") {
+        hint.textContent = `Claude's mod templates are for Fabric and NeoForge; ${loaderLabel(loader)} instances can play and use mods from Modrinth and CurseForge.`;
+      }
       lv.disabled = false;
     } catch (e) {
       lv.innerHTML = "<option value=''>Couldn't load</option>";
@@ -1185,7 +1221,7 @@ async function setupModal(step = 0) {
     body = `
       <div class="setup-hero"><img src="/icon.png" alt="" width="64" height="64"/></div>
       <h2 class="center">Welcome to MioCraft</h2>
-      <p class="center muted">Play Minecraft with Fabric or NeoForge, browse Modrinth and CurseForge, and have Claude Code build mods for you.</p>
+      <p class="center muted">Play Minecraft with Fabric, NeoForge, Forge or Quilt, browse Modrinth and CurseForge, and have Claude Code build mods for you.</p>
       <p class="center muted small">Setup takes about a minute. You can change everything later in Settings.</p>
       ${nav("Get started", { back: false })}`;
   } else if (name === "claude") {

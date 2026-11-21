@@ -260,10 +260,10 @@ impl Library {
                     size: a.size,
                 }));
             }
-            if d.classifiers.is_some() && self.natives.is_some() {
-                // Natives-only library (pre-1.19 LWJGL).
-                return Ok(None);
-            }
+        }
+        if self.natives.is_some() {
+            // Natives-only library (LWJGL 2): nothing goes on the classpath.
+            return Ok(None);
         }
         let rel = maven::coord_to_path(&self.name)?;
         let base = self.url.clone().unwrap_or_else(|| LIBRARIES_URL.to_string());
@@ -285,7 +285,15 @@ impl Library {
         let key = natives.get(platform::mojang_os())?;
         let bits = if cfg!(target_pointer_width = "64") { "64" } else { "32" };
         let key = key.replace("${arch}", bits);
-        let a = self.downloads.as_ref()?.classifiers.as_ref()?.get(&key)?;
+        let Some(classifiers) = self.downloads.as_ref().and_then(|d| d.classifiers.as_ref()) else {
+            // No download info (Legacy Fabric's LWJGL): the natives jar sits
+            // next to the library in its Maven repository.
+            let rel = maven::coord_to_path(&format!("{}:{key}", self.name)).ok()?;
+            let base = self.url.clone().unwrap_or_else(|| LIBRARIES_URL.to_string());
+            let base = if base.ends_with('/') { base } else { format!("{base}/") };
+            return Some(Download { url: format!("{base}{rel}"), path: libs_dir.join(rel), sha1: None, size: None });
+        };
+        let a = classifiers.get(&key)?;
         let rel = a.path.clone().unwrap_or_else(|| {
             maven::coord_to_path(&format!("{}:{key}", self.name)).unwrap_or_default()
         });
@@ -487,6 +495,21 @@ async fn install_assets(l: &Launcher, index: &AssetIndexRef) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn natives_from_maven_coordinates() {
+        // Legacy Fabric's LWJGL: natives without download info.
+        let lib: Library = serde_json::from_str(r#"{"name":"org.lwjgl.lwjgl:lwjgl-platform:2.9.4+legacyfabric.17",
+            "url":"https://maven.legacyfabric.net/","natives":{"linux":"natives-linux","osx":"natives-osx","windows":"natives-windows"}}"#).unwrap();
+        let dir = std::path::Path::new("L");
+        assert!(lib.artifact_download(dir).unwrap().is_none(), "natives-only libraries have no classpath jar");
+        let n = lib.natives_download(dir).unwrap();
+        let classifier = format!("natives-{}", if cfg!(windows) { "windows" } else if cfg!(target_os = "macos") { "osx" } else { "linux" });
+        assert_eq!(
+            n.url,
+            format!("https://maven.legacyfabric.net/org/lwjgl/lwjgl/lwjgl-platform/2.9.4+legacyfabric.17/lwjgl-platform-2.9.4+legacyfabric.17-{classifier}.jar")
+        );
+    }
 
     #[test]
     fn rules_disallow_other_os() {

@@ -84,7 +84,12 @@ pub fn find_suspects(text: &str, installed: &[mods::ModEntry]) -> Vec<Suspect> {
     let mut out = vec![];
     for m in installed.iter().filter(|m| m.enabled) {
         let Some(id) = m.mod_id.as_deref() else { continue };
-        if matches!(id, "minecraft" | "java" | "fabricloader" | "neoforge" | "fabric-api" | "fabric") || id.len() < 3 {
+        if matches!(
+            id,
+            "minecraft" | "java" | "fabricloader" | "neoforge" | "fabric-api" | "fabric" | "forge" | "fml" | "mcp"
+                | "quilt_loader" | "quilted_fabric_api" | "qsl"
+        ) || id.len() < 3
+        {
             continue;
         }
         let id_l = id.to_lowercase();

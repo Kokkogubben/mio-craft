@@ -200,11 +200,8 @@ async fn versions(State(s): State<AppState>, Query(q): Query<VersionsQuery>) -> 
 }
 
 async fn loader_versions(State(s): State<AppState>, Path((loader, mc)): Path<(String, String)>) -> R<Vec<loaders::LoaderVersion>> {
-    Ok(Json(match loader.as_str() {
-        "fabric" => loaders::fabric_versions(&s.l, &mc).await?,
-        "neoforge" => loaders::neoforge_versions(&s.l, &mc).await?,
-        _ => vec![],
-    }))
+    let loader = loaders::Loader::parse(&loader).ok_or_else(|| anyhow::anyhow!("unknown mod loader {loader:?}"))?;
+    Ok(Json(loaders::versions(&s.l, loader, &mc).await?))
 }
 
 async fn accounts(State(s): State<AppState>) -> R<Vec<auth::AccountInfo>> {

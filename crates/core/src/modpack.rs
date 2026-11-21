@@ -56,11 +56,11 @@ pub fn host_allowed(url: &str) -> bool {
 /// Loader and versions from a pack's `dependencies`.
 pub fn pack_target(deps: &HashMap<String, String>) -> Result<(String, Loader, Option<String>)> {
     let mc = deps.get("minecraft").cloned().ok_or_else(|| anyhow!("the pack doesn't say which Minecraft version it's for"))?;
-    if deps.contains_key("forge") {
-        bail!("this pack uses Forge; MioCraft supports Fabric and NeoForge packs");
+    if let Some(v) = deps.get("forge") {
+        return Ok((mc, Loader::Forge, Some(v.clone())));
     }
-    if deps.contains_key("quilt-loader") {
-        bail!("this pack uses Quilt; MioCraft supports Fabric and NeoForge packs");
+    if let Some(v) = deps.get("quilt-loader") {
+        return Ok((mc, Loader::Quilt, Some(v.clone())));
     }
     if let Some(v) = deps.get("fabric-loader") {
         return Ok((mc, Loader::Fabric, Some(v.clone())));
@@ -290,6 +290,15 @@ pub async fn export(l: &Launcher, instance_id: &str, opts: ExportOptions) -> Res
         Loader::Neoforge => {
             deps.insert("neoforge".into(), inst.loader_version.clone().unwrap_or_default());
         }
+        Loader::Forge => {
+            deps.insert("forge".into(), inst.loader_version.clone().unwrap_or_default());
+        }
+        Loader::Quilt => {
+            deps.insert("quilt-loader".into(), inst.loader_version.clone().unwrap_or_default());
+        }
+        // Modrinth packs have no way to name Legacy Fabric; other launchers
+        // would install regular Fabric, which doesn't exist for these versions.
+        Loader::LegacyFabric => bail!("Modrinth modpacks can't describe Legacy Fabric, so this instance can't be exported"),
         Loader::Vanilla => {}
     }
 
@@ -420,8 +429,13 @@ mod tests {
         d.insert("fabric-loader".to_string(), "0.16.9".to_string());
         assert_eq!(pack_target(&d).unwrap().1, Loader::Fabric);
         d.remove("fabric-loader");
-        d.insert("forge".into(), "52".into());
-        assert!(pack_target(&d).is_err());
+        d.insert("forge".into(), "52.1.0".into());
+        assert_eq!(pack_target(&d).unwrap(), ("1.21.1".to_string(), Loader::Forge, Some("52.1.0".to_string())));
+        d.remove("forge");
+        d.insert("quilt-loader".into(), "0.29.1".into());
+        assert_eq!(pack_target(&d).unwrap().1, Loader::Quilt);
+        d.remove("quilt-loader");
+        assert_eq!(pack_target(&d).unwrap(), ("1.21.1".to_string(), Loader::Vanilla, None));
     }
 
     fn test_launcher_without_proxy(dir: &Path) -> Launcher {

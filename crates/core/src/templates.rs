@@ -64,6 +64,10 @@ pub fn toolchain(loader: Loader, mc: &str, java_target: u32, latest_plugin: Opti
             latest_plugin.unwrap_or_else(|| MODDEV_FALLBACK.into())
         }
         Loader::Vanilla => bail!("Vanilla instances can't load mods; create a Fabric or NeoForge instance"),
+        other => bail!(
+            "Claude's mod templates are for Fabric and NeoForge instances; {} isn't supported yet",
+            other.display_name()
+        ),
     };
     Ok(Toolchain { java_target, gradle_version, gradle_jdk, plugin_version })
 }
@@ -170,7 +174,8 @@ pub fn render(spec: &ModSpec) -> BTreeMap<String, String> {
                 "{\n}\n".into(),
             );
         }
-        Loader::Vanilla => {}
+        // toolchain() refuses these before any files are made.
+        Loader::Vanilla | Loader::Forge | Loader::Quilt | Loader::LegacyFabric => {}
     }
     f
 }
@@ -461,11 +466,7 @@ side="BOTH"
 }
 
 fn claude_md(s: &ModSpec) -> String {
-    let loader = match s.loader {
-        Loader::Fabric => "Fabric",
-        Loader::Neoforge => "NeoForge",
-        Loader::Vanilla => "Vanilla",
-    };
+    let loader = s.loader.display_name();
     let mappings = if is_unobfuscated(&s.mc_version) {
         "none (Minecraft is unobfuscated from 26.1)".to_string()
     } else {

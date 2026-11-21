@@ -11,7 +11,7 @@ MioCraft only talks to the services it needs to do what you ask:
 | Service | When | What is sent |
 |---|---|---|
 | Mojang (`piston-meta.mojang.com`, `resources.download.minecraft.net`, `libraries.minecraft.net`) | Listing versions, installing an instance | Download requests |
-| Fabric, NeoForge, Adoptium, JetBrains, Gradle | Installing a mod loader, Java or build tools | Download requests |
+| Fabric, Quilt, Legacy Fabric, NeoForge and Forge (`meta.fabricmc.net`, `meta.quiltmc.org`, `meta.legacyfabric.net`, `maven.neoforged.net`, `maven.minecraftforge.net`, `files.minecraftforge.net` and their download servers), Adoptium, JetBrains, Gradle | Listing loader versions, installing a mod loader, Java or build tools | Download requests, and the Minecraft version you picked |
 | Modrinth | Using the mod and shader browser, checking for mod updates, importing modpacks | Your search text, the instance's Minecraft version and loader, and which browser-installed mods to check for updates. Imported modpacks may also download files from GitHub or GitLab |
 | CurseForge | Only if you add a CurseForge API key | The same, plus your API key |
 | Microsoft, Xbox Live and Minecraft services | Signing in and refreshing your session | The tokens Microsoft's sign-in flow requires |

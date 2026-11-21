@@ -103,7 +103,7 @@ pub async fn create(l: &Launcher, req: NewInstance) -> Result<Instance> {
         .name
         .clone()
         .filter(|n| !n.trim().is_empty())
-        .unwrap_or_else(|| format!("{} {}", req.mc_version, req.loader.as_str()));
+        .unwrap_or_else(|| format!("{} {}", req.mc_version, req.loader.display_name()));
     let base = slug(&name);
     let mut id = base.clone();
     let mut n = 2;
@@ -115,18 +115,11 @@ pub async fn create(l: &Launcher, req: NewInstance) -> Result<Instance> {
     if loader_version.is_none() {
         loader_version = match req.loader {
             Loader::Vanilla => None,
-            Loader::Fabric => {
-                let v = loaders::fabric_versions(l, &req.mc_version).await?;
-                let pick = v.iter().find(|x| x.stable).or(v.first());
-                Some(pick.ok_or_else(|| anyhow!("Fabric has no loader for Minecraft {}", req.mc_version))?.version.clone())
-            }
-            Loader::Neoforge => {
-                if loaders::neoforge_prefix(&req.mc_version).is_none() {
-                    bail!("NeoForge supports Minecraft 1.20.2 and newer");
-                }
-                let v = loaders::neoforge_versions(l, &req.mc_version).await?;
-                let pick = v.iter().find(|x| x.stable).or(v.first());
-                Some(pick.ok_or_else(|| anyhow!("NeoForge has no build for Minecraft {} yet", req.mc_version))?.version.clone())
+            loader => {
+                let v = loaders::versions(l, loader, &req.mc_version).await?;
+                let pick = loaders::default_version(&v)
+                    .ok_or_else(|| anyhow!(loaders::unsupported_message(loader, &req.mc_version)))?;
+                Some(pick.version.clone())
             }
         };
     }
@@ -157,17 +150,7 @@ pub async fn install(l: &Launcher, id: &str) -> Result<Instance> {
     l.progress("install", 0, 4, format!("Installing Minecraft {}", inst.mc_version));
     let vanilla = mojang::fetch_version_json(l, &inst.mc_version).await?;
     l.progress("install", 1, 4, "Installing mod loader");
-    let version_id = match inst.loader {
-        Loader::Vanilla => inst.mc_version.clone(),
-        Loader::Fabric => {
-            let v = inst.loader_version.clone().ok_or_else(|| anyhow!("no Fabric version set"))?;
-            loaders::install_fabric(l, &inst.mc_version, &v).await?
-        }
-        Loader::Neoforge => {
-            let v = inst.loader_version.clone().ok_or_else(|| anyhow!("no NeoForge version set"))?;
-            loaders::install_neoforge(l, &inst.mc_version, &v).await?
-        }
-    };
+    let version_id = loaders::install(l, inst.loader, &inst.mc_version, inst.loader_version.as_deref()).await?;
     l.progress("install", 2, 4, "Downloading libraries and assets");
     mojang::install_files(l, &version_id).await?;
     l.progress("install", 3, 4, "Getting Java");

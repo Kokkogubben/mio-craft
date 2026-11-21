@@ -116,6 +116,12 @@ pub async fn create(l: &Launcher, req: NewProject) -> Result<ModProject> {
         .loader_version
         .clone()
         .ok_or_else(|| anyhow!("this instance has no mod loader; create a Fabric or NeoForge instance"))?;
+    if !matches!(inst.loader, Loader::Fabric | Loader::Neoforge) {
+        bail!(
+            "Claude's mod templates are for Fabric and NeoForge instances; {} isn't supported yet",
+            inst.loader.display_name()
+        );
+    }
     let vanilla = mojang::fetch_version_json(l, &inst.mc_version).await?;
     let java_target = java::required_major(&vanilla);
     let plugin = latest_plugin(l, inst.loader, &inst.mc_version).await;

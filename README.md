@@ -13,7 +13,7 @@ MioCraft does three things:
 
 1. **Runs as many separate Minecraft setups as you like.** Each instance has its
    own Minecraft version, mod loader, mods, worlds and settings, so a vanilla
-   1.21 world, a Fabric modpack and a NeoForge test setup never get in each
+   1.21 world, a Fabric modpack and a Forge 1.12.2 modpack never get in each
    other's way.
 2. **Finds and installs mods for you.** The mod browser searches Modrinth and
    CurseForge from inside the launcher and only shows mods that fit the instance
@@ -26,7 +26,17 @@ MioCraft does three things:
 
 **Launcher**
 
-- **Multiple instances** for any Minecraft version in Mojang's list (releases and snapshots), each **vanilla**, **Fabric** or **NeoForge**
+- **Multiple instances** for any Minecraft version in Mojang's list (releases and snapshots), each **vanilla** or with a mod loader:
+
+  | Loader | Minecraft versions |
+  |---|---|
+  | **Fabric** | 1.14 and newer |
+  | **NeoForge** | 1.20.2 and newer |
+  | **Forge** | 1.7.10 and newer, including the old favourites 1.7.10, 1.8.9 and 1.12.2 |
+  | **Quilt** | 1.14 and newer; runs most Fabric mods too |
+  | **Legacy Fabric** | 1.3 to 1.13.2 (Fabric for old versions) |
+
+  LiteLoader, Rift and ModLoader are not supported: they are no longer maintained.
 - Every instance keeps its **own game folder** (mods, saves, resource packs, logs) and its own memory setting; game files, libraries and Java are shared between instances so they're only downloaded once
 - **Java downloaded automatically**: the launcher fetches the Java version each Minecraft version needs
 - **Microsoft account sign-in**, with **tokens kept in Windows Credential Manager**, not in a plain file
@@ -38,15 +48,15 @@ MioCraft does three things:
 
 **Mods**
 
-- **Built-in mod browser** for **Modrinth** and **CurseForge**: results are filtered to the instance's Minecraft version and loader, required dependencies install automatically, and downloads are checked against their checksums
+- **Built-in mod browser** for **Modrinth** and **CurseForge**: results are filtered to the instance's Minecraft version and loader (Quilt instances also see Fabric mods), required dependencies install automatically, and downloads are checked against their checksums
 - **Mod list** per instance: enable/disable, delete, search, and a *Rebuild* button for Claude-made mods
 - **Built-in shader browser**: the same browser has a **Shaders** switch that finds shader packs for the instance's Minecraft version on Modrinth and CurseForge, installs them into its `shaderpacks` folder, lists and removes installed packs, and offers to install **Iris** (the mod that loads them) if it's missing
 - **Mod updates**: check browser-installed mods for newer compatible versions and update one or all
-- **Modpacks**: import Modrinth `.mrpack` files (Fabric and NeoForge) and export instances to share, with Claude's mods included
+- **Modpacks**: import Modrinth `.mrpack` files (Fabric, Quilt, Forge and NeoForge) and export instances to share, with Claude's mods included
 
 **Claude Code**
 
-- **Make a mod with Claude**: describe a mod in the launcher and it opens Claude Code with your idea and the instance ready; "Ask Claude" does the same for changing an existing mod
+- **Make a mod with Claude**: describe a mod in the launcher and it opens Claude Code with your idea and the instance ready; "Ask Claude" does the same for changing an existing mod. Mod templates exist for **Fabric and NeoForge** instances
 - **Ask Claude to fix** on the crash banner opens Claude Code with the crash details
 - **Live mode** (experimental, Fabric on Minecraft 26.x): change the game while it runs: hotswap code, add new blocks and items with live textures, and an experimental mode that registers real content mid-game. Each part is a toggle in the instance's settings
 - **Gradle downloaded automatically**, so you don't need to install anything to build mods
@@ -110,13 +120,14 @@ endpoint.
 
 ### 2. Make an instance and add mods
 
-Press **+** next to *Instances*, pick a Minecraft version and a loader (vanilla,
-Fabric or NeoForge) and give it a name. The first time you press **Play** the
+Press **+** next to *Instances*, pick a Minecraft version and a loader (Fabric,
+NeoForge, Forge, Quilt, Legacy Fabric or vanilla) and give it a name. The
+loader version list marks Forge's recommended build and picks it for you. The first time you press **Play** the
 launcher downloads Minecraft, the loader and Java for that instance. Make as
 many instances as you like; **Folder** opens an instance's game folder and
 **Edit** changes its settings.
 
-On a Fabric or NeoForge instance, open the **Browse** tab to search Modrinth
+On an instance with a mod loader, open the **Browse** tab to search Modrinth
 (and CurseForge, once you've added a key, see below). Installing a mod also
 installs the mods it requires. Installed mods appear on the **Mods** tab, where
 you can turn them off, delete them or update them. Vanilla instances can't load
@@ -196,10 +207,12 @@ use their own approved Azure app instead by entering its client ID under
 
 ## Version support
 
-- **Playing**: any Minecraft version in Mojang's manifest, including snapshots.
-- **Fabric mod templates**: Minecraft 1.14.4 and newer (official Mojang mappings;
-  no mappings from 26.1, which is unobfuscated).
-- **NeoForge**: Minecraft 1.20.2 and newer (NeoForge doesn't exist for older versions).
+- **Playing**: any Minecraft version in Mojang's manifest, including snapshots,
+  with the loaders listed under [Features](#features).
+- **Claude's mod templates**: Fabric on Minecraft 1.14.4 and newer (official
+  Mojang mappings; no mappings from 26.1, which is unobfuscated) and NeoForge on
+  1.20.2 and newer. There are no templates for Forge, Quilt or Legacy Fabric
+  instances; they can still play and use mods from the browser.
 
 ## Developing
 
@@ -249,8 +262,8 @@ the problem and asks before changing anything.
 
 ## Modpacks
 
-**Import**: the download button next to *Instances* takes a `.mrpack`. Fabric and
-NeoForge packs are supported (Forge and Quilt aren't). Files are only downloaded
+**Import**: the download button next to *Instances* takes a `.mrpack`. Fabric,
+Quilt, Forge and NeoForge packs are supported. Files are only downloaded
 from the hosts the format allows (Modrinth's CDN, GitHub, GitLab) and checked
 against their hashes.
 

@@ -788,6 +788,17 @@ select.input {
   color: var(--text);
 }
 
+/* Many options: let them wrap instead of squeezing their labels. */
+.seg.wrap {
+  flex-wrap: wrap;
+}
+
+.seg.wrap button {
+  flex: 1 0 auto;
+  white-space: nowrap;
+  padding: 7px 10px;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

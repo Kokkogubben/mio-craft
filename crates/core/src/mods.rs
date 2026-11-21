@@ -18,7 +18,7 @@ pub struct ModEntry {
     pub version: Option<String>,
     pub description: Option<String>,
     pub authors: Vec<String>,
-    /// `fabric`, `neoforge`, `forge` or `unknown`.
+    /// `fabric`, `quilt`, `neoforge`, `forge` or `unknown`.
     pub loader: String,
     pub size: u64,
     /// Set when the jar was built by Claude from a mod project in this launcher.
@@ -111,6 +111,9 @@ fn read_entry(zip: &mut zip::ZipArchive<std::fs::File>, name: &str) -> Option<St
 
 pub fn read_metadata(path: &Path) -> Result<ModMeta> {
     let mut zip = zip::ZipArchive::new(std::fs::File::open(path)?)?;
+    if let Some(json) = read_entry(&mut zip, "quilt.mod.json") {
+        return Ok(parse_quilt(&json));
+    }
     if let Some(json) = read_entry(&mut zip, "fabric.mod.json") {
         return Ok(parse_fabric(&json));
     }
@@ -130,7 +133,50 @@ pub fn read_metadata(path: &Path) -> Result<ModMeta> {
             return Ok(m);
         }
     }
+    // Forge for Minecraft 1.12.2 and older.
+    if let Some(json) = read_entry(&mut zip, "mcmod.info") {
+        if let Some(m) = parse_mcmod_info(&json) {
+            return Ok(m);
+        }
+    }
     Ok(ModMeta { loader: "unknown".into(), ..Default::default() })
+}
+
+pub fn parse_quilt(json: &str) -> ModMeta {
+    let v: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
+    let q = &v["quilt_loader"];
+    let meta = &q["metadata"];
+    // `contributors` maps a name to a role.
+    let authors = meta["contributors"].as_object().map(|c| c.keys().cloned().collect()).unwrap_or_default();
+    ModMeta {
+        mod_id: q["id"].as_str().map(String::from),
+        name: meta["name"].as_str().map(String::from),
+        version: q["version"].as_str().map(String::from),
+        description: meta["description"].as_str().map(String::from),
+        authors,
+        loader: "quilt".into(),
+    }
+}
+
+/// `mcmod.info`: a list of mods, or (format 2) an object with `modList`.
+/// Many are hand-written, so this is lenient.
+pub fn parse_mcmod_info(json: &str) -> Option<ModMeta> {
+    let v: serde_json::Value = serde_json::from_str(json.trim_start_matches('\u{feff}')).ok()?;
+    let m = v.as_array().or_else(|| v["modList"].as_array())?.first()?;
+    let text = |k: &str| m[k].as_str().map(str::trim).filter(|s| !s.is_empty() && !s.contains("${")).map(String::from);
+    let authors = m["authorList"]
+        .as_array()
+        .or_else(|| m["authors"].as_array())
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    Some(ModMeta {
+        mod_id: text("modid"),
+        name: text("name"),
+        version: text("version"),
+        description: text("description"),
+        authors,
+        loader: "forge".into(),
+    })
 }
 
 pub fn parse_fabric(json: &str) -> ModMeta {
@@ -268,5 +314,20 @@ Makes things glow.
         assert_eq!(m.name.as_deref(), Some("Glow"));
         assert_eq!(m.description.as_deref(), Some("Makes things glow."));
         assert_eq!(m.authors.len(), 2);
+    }
+
+    #[test]
+    fn quilt_and_old_forge_metadata() {
+        let q = parse_quilt(r#"{"schema_version":1,"quilt_loader":{"group":"org.x","id":"qmod","version":"1.2.0",
+            "metadata":{"name":"Q Mod","description":"Does q","contributors":{"Ada":"Owner"}}}}"#);
+        assert_eq!((q.mod_id.as_deref(), q.name.as_deref(), q.version.as_deref()), (Some("qmod"), Some("Q Mod"), Some("1.2.0")));
+        assert_eq!((q.authors, q.loader.as_str()), (vec!["Ada".to_string()], "quilt"));
+
+        let list = parse_mcmod_info("\u{feff}[{\"modid\":\"jei\",\"name\":\"JEI\",\"version\":\"4.16\",\"authorList\":[\"mezz\"]}]").unwrap();
+        assert_eq!((list.mod_id.as_deref(), list.version.as_deref(), list.loader.as_str()), (Some("jei"), Some("4.16"), "forge"));
+        assert_eq!(list.authors, vec!["mezz".to_string()]);
+        let v2 = parse_mcmod_info(r#"{"modListVersion":2,"modList":[{"modid":"old","name":"Old","version":"${version}"}]}"#).unwrap();
+        assert_eq!((v2.mod_id.as_deref(), v2.version), (Some("old"), None));
+        assert!(parse_mcmod_info("not json").is_none());
     }
 }
