@@ -885,8 +885,11 @@ async function newInstanceModal() {
   const lv = $<HTMLSelectElement>("#ni-lv");
   const hint = $("#ni-hint");
   let loader = "fabric";
+  // Answers can arrive out of order when the loader or version changes quickly.
+  let loadSeq = 0;
 
   const loadLoaders = async () => {
+    const seq = ++loadSeq;
     lv.innerHTML = "";
     hint.textContent = "";
     if (loader === "vanilla") {
@@ -897,6 +900,7 @@ async function newInstanceModal() {
     lv.innerHTML = "<option>Loading…</option>";
     try {
       const v = await api<{ version: string; stable: boolean; recommended: boolean }[]>("GET", `/loaders/${loader}/${enc(mc.value)}`);
+      if (seq !== loadSeq) return;
       if (!v.length) {
         lv.innerHTML = "<option value=''>Not available</option>";
         hint.textContent = loaderUnsupported(loader, mc.value);
@@ -913,6 +917,7 @@ async function newInstanceModal() {
       }
       lv.disabled = false;
     } catch (e) {
+      if (seq !== loadSeq) return;
       lv.innerHTML = "<option value=''>Couldn't load</option>";
       hint.textContent = (e as Error).message;
     }
