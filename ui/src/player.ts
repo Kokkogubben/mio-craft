@@ -4,7 +4,7 @@
 // from Mojang.
 
 import { FunctionAnimation, SkinViewer, type PlayerObject } from "skinview3d";
-import { Vector3 } from "three";
+import { Group, Vector3 } from "three";
 import { apiBlob, enc } from "./api";
 import { loadDiorama } from "./scene";
 
@@ -26,17 +26,33 @@ let viewYaw = 225;
 /** How far above the player the camera is, in degrees. */
 const VIEW_PITCH = 12;
 const FOV = 30;
+
+/**
+ * Signed in, the player sits on the crafting table in the diorama. Signed out,
+ * the scene stays blank and the silhouette stands, as before the diorama.
+ */
+let seated = false;
+let diorama: Group | null = null;
+
 /**
  * What has to fit between the top of the screen and the Play button, in world
- * units relative to the seat: the top of the table up to the name above the head.
+ * units relative to the seat: sitting, the top of the table up to the name
+ * above the head; standing, the feet up to the name.
  */
-const FRAME_BOTTOM = -6, FRAME_TOP = 36;
+const FRAMES = { seated: [-6, 36], standing: [-2, 50] } as const;
 
 const seat = new Vector3(0, 0, 0);
 let box: HTMLElement | null = null;
 
+function setSeated(on: boolean) {
+  seated = on;
+  if (diorama) diorama.visible = on;
+  placeCamera();
+}
+
 function placeCamera() {
   if (!viewer || !box) return;
+  const [FRAME_BOTTOM, FRAME_TOP] = seated ? FRAMES.seated : FRAMES.standing;
   const w = viewer.width, h = viewer.height;
   // The free space above the Play button, in canvas pixels.
   const play = document.getElementById("home-play");
@@ -45,7 +61,8 @@ function placeCamera() {
   const perUnit = (bottom - top) / (FRAME_TOP - FRAME_BOTTOM);
 
   const target = seat.clone().add(new Vector3(0, (FRAME_TOP + FRAME_BOTTOM) / 2, 0));
-  const yaw = (viewYaw * Math.PI) / 180, pitch = (VIEW_PITCH * Math.PI) / 180;
+  const yaw = ((seated ? viewYaw : viewYaw + 25) * Math.PI) / 180;
+  const pitch = ((seated ? VIEW_PITCH : 4) * Math.PI) / 180;
   const dist = h / perUnit / 2 / Math.tan((FOV * Math.PI) / 360);
   const dir = new Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
   viewer.camera.position.copy(target).addScaledVector(dir, dist);
@@ -53,9 +70,10 @@ function placeCamera() {
   viewer.camera.lookAt(target);
   // Shift the picture so the target sits in the middle of the free space, not the screen.
   viewer.camera.setViewOffset(w, h, 0, h / 2 - (top + bottom) / 2, w, h);
-  // The player faces the camera.
-  viewer.playerObject.rotation.y = yaw;
-  viewer.playerObject.position.copy(seat).add(new Vector3(0, 6, 0)); // hips on the table top
+  // Sitting, the player faces the camera; standing, turned a little like before.
+  viewer.playerObject.rotation.y = seated ? yaw : yaw - 0.45;
+  // Sitting: hips on the table top. Standing: feet at the table top's height.
+  viewer.playerObject.position.copy(seat).add(new Vector3(0, seated ? 6 : 16, 0));
 }
 
 // ---------- pose: sitting, breathing, head following the cursor ----------
@@ -65,16 +83,25 @@ const head = { yaw: 0, pitch: 0 };
 let label: HTMLElement | null = null;
 const headPos = new Vector3();
 
-function sitting(player: PlayerObject, t: number, delta: number) {
+function pose(player: PlayerObject, t: number, delta: number) {
   const s = player.skin;
-  // Legs forward over the table's edge, swinging a little.
-  s.rightLeg.rotation.set(-1.45 + Math.sin(t * 1.1) * 0.07, 0.12, 0);
-  s.leftLeg.rotation.set(-1.45 + Math.sin(t * 1.1 + 2.2) * 0.07, -0.12, 0);
-  // Hands resting on the knees, rising and falling with the breath.
   const breath = Math.sin(t * 1.6);
-  s.rightArm.rotation.set(-0.55 + breath * 0.025, 0, 0.06);
-  s.leftArm.rotation.set(-0.55 + breath * 0.025, 0, -0.06);
-  s.body.rotation.x = 0.04 + breath * 0.012;
+  if (seated) {
+    // Legs forward over the table's edge, swinging a little.
+    s.rightLeg.rotation.set(-1.45 + Math.sin(t * 1.1) * 0.07, 0.12, 0);
+    s.leftLeg.rotation.set(-1.45 + Math.sin(t * 1.1 + 2.2) * 0.07, -0.12, 0);
+    // Hands resting on the knees, rising and falling with the breath.
+    s.rightArm.rotation.set(-0.55 + breath * 0.025, 0, 0.06);
+    s.leftArm.rotation.set(-0.55 + breath * 0.025, 0, -0.06);
+    s.body.rotation.x = 0.04 + breath * 0.012;
+  } else {
+    // Standing still, arms swaying gently with the breath.
+    s.rightLeg.rotation.set(0, 0, 0);
+    s.leftLeg.rotation.set(0, 0, 0);
+    s.rightArm.rotation.set(0, 0, 0.05 + breath * 0.03);
+    s.leftArm.rotation.set(0, 0, -0.05 - breath * 0.03);
+    s.body.rotation.x = 0;
+  }
 
   // Look towards the cursor, eased and limited to a natural range.
   let ty = 0, tp = 0;
@@ -114,7 +141,7 @@ export function initPlayer(canvas: HTMLCanvasElement, nameLabel: HTMLElement) {
   viewer.controls.enableZoom = false;
   viewer.controls.enablePan = false;
   viewer.controls.maxDistance = 5000;
-  viewer.animation = new FunctionAnimation(sitting);
+  viewer.animation = new FunctionAnimation(pose);
   placeCamera();
   shown = "";
 
@@ -137,11 +164,14 @@ export function initPlayer(canvas: HTMLCanvasElement, nameLabel: HTMLElement) {
   });
   document.documentElement.addEventListener("pointerleave", () => (cursor.active = false));
 
-  // The player shows straight away; the diorama joins as soon as it's built.
+  // The player shows straight away; the diorama joins as soon as it's built
+  // (hidden while signed out).
   loadDiorama(SCENE)
     .then((d) => {
       if (!viewer) return;
-      viewer.scene.add(d.group);
+      diorama = d.group;
+      diorama.visible = seated;
+      viewer.scene.add(diorama);
       if (d.seat) seat.copy(d.seat);
       placeCamera();
     })
@@ -158,6 +188,7 @@ export function pausePlayer(paused: boolean) {
  * the player's head for the top bar, or null when there is no skin to show.
  */
 export async function showAccount(id: string | null): Promise<string | null> {
+  if (seated !== !!id) setSeated(!!id);
   if (!id) {
     if (viewer && shown !== "") viewer.loadSkin(SILHOUETTE, { model: "default" });
     shown = "";
