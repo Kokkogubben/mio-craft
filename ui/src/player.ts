@@ -4,9 +4,9 @@
 // from Mojang.
 
 import { FunctionAnimation, SkinViewer, type PlayerObject } from "skinview3d";
-import { Group, Vector3 } from "three";
-import { apiBlob, enc } from "./api";
-import { loadDiorama } from "./scene";
+import { Group, Mesh, MeshBasicMaterial, Vector3 } from "three";
+import { api, apiBlob, enc } from "./api";
+import { buildAtlas, buildDiorama, loadDiorama, textureNames, type Structure } from "./scene";
 
 const SILHOUETTE = "/skin/silhouette.png";
 const SCENE = "/scene/home.mcstructure";
@@ -48,6 +48,80 @@ function setSeated(on: boolean) {
   seated = on;
   if (diorama) diorama.visible = on;
   placeCamera();
+  void loadTextures();
+}
+
+// ---------- real textures ----------
+
+let structure: Structure | null = null;
+let textured = false;
+let texturing = false;
+
+/**
+ * Swap the flat colours for the real block textures. The launcher reads them
+ * from the player's own game files, so this only happens once signed in.
+ */
+async function loadTextures() {
+  if (!structure || !seated || textured || texturing) return;
+  texturing = true;
+  try {
+    const res = await api<{ version: string; textures: Record<string, string> }>("POST", "/scene/textures", { names: textureNames(structure) });
+    const images = new Map<string, HTMLImageElement>();
+    await Promise.all(
+      Object.entries(res.textures).map(async ([name, png]) => {
+        images.set(name.replace(/^block\//, ""), await loadImage(`data:image/png;base64,${png}`));
+      }),
+    );
+    if (!images.size || !viewer) return;
+    fadeIn(buildDiorama(structure, buildAtlas(images)).group);
+    textured = true;
+  } catch (e) {
+    // Offline before the game files were ever downloaded: the flat colours stay.
+    console.warn("Home scene textures:", e);
+  } finally {
+    texturing = false;
+  }
+}
+
+/** Fade a new version of the diorama in over the current one, then drop the old one. */
+function fadeIn(next: Group) {
+  if (!viewer) return;
+  const old = diorama;
+  diorama = next;
+  next.visible = seated;
+  const mats: MeshBasicMaterial[] = [];
+  next.traverse((o) => {
+    if (o instanceof Mesh) mats.push(o.material as MeshBasicMaterial);
+  });
+  const set = (k: number) =>
+    mats.forEach((m) => {
+      m.opacity = k;
+      // Keep see-through texture pixels cut out at every step of the fade.
+      if (m.map) m.alphaTest = Math.max(0.01, 0.5 * k);
+    });
+  mats.forEach((m) => (m.transparent = true));
+  set(0);
+  viewer.scene.add(next);
+  const start = performance.now();
+  const step = (now: number) => {
+    const k = Math.min(1, (now - start) / 450);
+    set(k);
+    if (k < 1) return void requestAnimationFrame(step);
+    mats.forEach((m) => {
+      m.transparent = false;
+      m.needsUpdate = true;
+    });
+    if (old && viewer) {
+      viewer.scene.remove(old);
+      old.traverse((o) => {
+        if (o instanceof Mesh) {
+          o.geometry.dispose();
+          (o.material as MeshBasicMaterial).dispose();
+        }
+      });
+    }
+  };
+  requestAnimationFrame(step);
 }
 
 function placeCamera() {
@@ -172,6 +246,8 @@ export function initPlayer(canvas: HTMLCanvasElement, nameLabel: HTMLElement) {
       diorama = d.group;
       diorama.visible = seated;
       viewer.scene.add(diorama);
+      structure = d.structure;
+      void loadTextures();
       if (d.seat) seat.copy(d.seat);
       placeCamera();
     })

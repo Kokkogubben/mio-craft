@@ -30,6 +30,7 @@ pub mod paths;
 pub mod platform;
 pub mod process;
 pub mod projects;
+pub mod scene;
 pub mod secrets;
 pub mod shaders;
 pub mod templates;

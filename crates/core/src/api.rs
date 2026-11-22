@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, modpack, instances, launch, loaders, mods, mojang, process, projects, shaders, Launcher};
+use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, modpack, instances, launch, loaders, mods, mojang, process, projects, scene, shaders, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -84,6 +84,7 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/accounts/login", post(login))
         .route("/accounts/{id}", delete(remove_account))
         .route("/accounts/{id}/skin", get(account_skin))
+        .route("/scene/textures", post(scene_textures))
         .route("/instances", get(list_instances).post(create_instance))
         .route("/instances/{id}", get(get_instance).patch(patch_instance).delete(delete_instance))
         .route("/instances/{id}/install", post(install_instance))
@@ -220,6 +221,15 @@ async fn account_skin(State(s): State<AppState>, Path(id): Path<String>) -> std:
     let skin = auth::skin(&s.l, &id).await?;
     let model = if skin.slim { "slim" } else { "default" };
     Ok(([("content-type", "image/png"), ("x-skin-model", model), ("cache-control", "no-store")], skin.png).into_response())
+}
+
+#[derive(Deserialize)]
+struct SceneTexturesReq {
+    names: Vec<String>,
+}
+
+async fn scene_textures(State(s): State<AppState>, Json(req): Json<SceneTexturesReq>) -> R<scene::SceneTextures> {
+    Ok(Json(scene::textures(&s.l, &req.names).await?))
 }
 
 async fn remove_account(State(s): State<AppState>, Path(id): Path<String>) -> R<Value> {
