@@ -1317,14 +1317,17 @@ function exportModal(inst: Instance) {
   const enabled = S.mods.filter((m) => m.enabled);
   const linked = enabled.filter((m) => m.online?.source === "modrinth");
   const claude = enabled.filter((m) => m.claude_project && m.online?.source !== "modrinth");
-  const other = enabled.filter((m) => !linked.includes(m) && !claude.includes(m));
+  // CurseForge files may only come from CurseForge, so they are never copied into a pack.
+  const curseforge = enabled.filter((m) => m.online?.source === "curseforge" && !claude.includes(m));
+  const other = enabled.filter((m) => !linked.includes(m) && !claude.includes(m) && !curseforge.includes(m));
   openModal(`
     <h2>Export modpack</h2>
     <p class="muted small">Creates a Modrinth modpack (.mrpack) of "${esc(inst.name)}" that other launchers can import.</p>
     <ul class="export-sum">
       <li><strong>${linked.length}</strong> Modrinth mod${linked.length === 1 ? "" : "s"}, linked (not copied)</li>
       <li><strong>${claude.length}</strong> mod${claude.length === 1 ? "" : "s"} made by Claude, included in the pack</li>
-      ${other.length ? `<li><strong>${other.length}</strong> other mod${other.length === 1 ? "" : "s"} (CurseForge or added by hand): ${other.map((m) => esc(m.name ?? m.file_name)).join(", ")}</li>` : ""}
+      ${curseforge.length ? `<li><strong>${curseforge.length}</strong> CurseForge mod${curseforge.length === 1 ? "" : "s"}, left out (CurseForge files can't be shared in packs, so players install ${curseforge.length === 1 ? "it" : "them"} from CurseForge): ${curseforge.map((m) => esc(m.name ?? m.file_name)).join(", ")}</li>` : ""}
+      ${other.length ? `<li><strong>${other.length}</strong> other mod${other.length === 1 ? "" : "s"} (added by hand): ${other.map((m) => esc(m.name ?? m.file_name)).join(", ")}</li>` : ""}
     </ul>
     <label class="field"><span>Pack version</span><input id="ex-ver" class="input" value="1.0.0"/></label>
     <label class="check"><input type="checkbox" id="ex-cfg" checked/> Include mod settings (config folder)</label>

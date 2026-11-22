@@ -309,6 +309,9 @@ pub async fn export(l: &Launcher, instance_id: &str, opts: ExportOptions) -> Res
         let label = m.name.clone().unwrap_or_else(|| m.file_name.clone());
         let src = mods_dir.join(&m.file_name);
         let from_modrinth = m.online.as_ref().filter(|o| o.source == Source::Modrinth);
+        // CurseForge files are only ever downloaded from CurseForge; copying
+        // them into a pack would redistribute them.
+        let from_curseforge = m.online.as_ref().is_some_and(|o| o.source == Source::Curseforge);
         let mut modrinth_url = from_modrinth.and_then(|o| o.download_url.clone()).filter(|u| host_allowed(u));
         if modrinth_url.is_none() {
             if let Some(o) = from_modrinth {
@@ -324,12 +327,12 @@ pub async fn export(l: &Launcher, instance_id: &str, opts: ExportOptions) -> Res
             hashes.insert("sha512".into(), s512);
             files.push(PackFile { path: format!("mods/{}", m.file_name), hashes, env: None, downloads: vec![url], file_size: size });
             report.linked.push(label);
-        } else if m.claude_project.is_some() || opts.include_other_jars {
+        } else if m.claude_project.is_some() || (opts.include_other_jars && !from_curseforge) {
             embed.push((src, format!("overrides/mods/{}", m.file_name)));
             report.embedded.push(label);
         } else {
             let why = match &m.online {
-                Some(o) if o.source == Source::Curseforge => "from CurseForge, which doesn't allow linking in .mrpack files",
+                Some(o) if o.source == Source::Curseforge => "from CurseForge; its files can't be linked or copied into .mrpack files, so players get it from CurseForge",
                 Some(_) => "from Modrinth, but its download link couldn't be found; reinstall it from Browse",
                 None => "added by hand; it's unknown whether it may be shared",
             };
@@ -483,6 +486,22 @@ mod tests {
         mods::save_tags(&l, &inst.id, &ct).await.unwrap();
         std::fs::create_dir_all(l.paths.game_dir(&inst.id).join("config")).unwrap();
         std::fs::write(l.paths.game_dir(&inst.id).join("config/glow.toml"), "brightness = 7").unwrap();
+
+        // A CurseForge-installed mod is never copied, even when other jars are.
+        jar("cfmod.jar", "cfmod");
+        let mut tags = browse::load_tags(&l, &inst.id).await;
+        tags.insert("cfmod.jar".into(), OnlineMod {
+            source: Source::Curseforge, project_id: "1".into(), version_id: "2".into(), title: "CF Mod".into(),
+            page_url: String::new(), as_dependency: false, download_url: None,
+        });
+        browse::save_tags(&l, &inst.id, &tags).await.unwrap();
+        let all = export(&l, &inst.id, ExportOptions { version: Some("all".into()), include_config: false, include_other_jars: true }).await.unwrap();
+        assert!(all.embedded.contains(&"manual".to_string()), "{:?}", all.embedded);
+        assert!(!all.embedded.contains(&"cfmod".to_string()), "{:?}", all.embedded);
+        assert!(all.left_out.iter().any(|x| x.starts_with("cfmod (from CurseForge")), "{:?}", all.left_out);
+        std::fs::remove_file(l.paths.mods_dir(&inst.id).join("cfmod.jar")).unwrap();
+        tags.remove("cfmod.jar");
+        browse::save_tags(&l, &inst.id, &tags).await.unwrap();
 
         let r = export(&l, &inst.id, ExportOptions { version: Some("2.0".into()), include_config: true, include_other_jars: false }).await.unwrap();
         assert_eq!(r.linked, vec!["sodium"]);

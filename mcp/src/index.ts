@@ -253,7 +253,7 @@ server.registerTool(
   "export_modpack",
   {
     description:
-      "Export an instance as a Modrinth modpack (.mrpack). Modrinth mods are linked, Claude-made mods are included; other mods are left out unless include_other_jars is true (only when their licences allow sharing).",
+      "Export an instance as a Modrinth modpack (.mrpack). Modrinth mods are linked, Claude-made mods are included, and CurseForge mods are always left out (their files can't be shared in packs). Mods added by hand are left out unless include_other_jars is true (only when their licences allow sharing).",
     inputSchema: {
       instance_id: z.string(),
       version: z.string().optional(),

@@ -269,8 +269,10 @@ against their hashes.
 
 **Export**: *Export* on an instance writes a `.mrpack` to the `exports` folder.
 Modrinth mods are linked rather than copied, and mods Claude made are included.
-Other mods (from CurseForge or added by hand) are left out unless you tick the
-box confirming you're allowed to share them.
+Mods installed from CurseForge are always left out: their files may only be
+downloaded from CurseForge, so players install them from there. Mods added by
+hand are left out unless you tick the box confirming you're allowed to share
+them.
 
 ## Privacy
 
