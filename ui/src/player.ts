@@ -175,11 +175,11 @@ function pose(player: PlayerObject, t: number, delta: number) {
   if (seated) petals?.update(delta);
   if (seated) {
     // Legs forward over the table's edge, swinging a little.
-    s.rightLeg.rotation.set(-1.45 + Math.sin(t * 1.1) * 0.07, 0.12, 0);
-    s.leftLeg.rotation.set(-1.45 + Math.sin(t * 1.1 + 2.2) * 0.07, -0.12, 0);
-    // Hands resting on the knees, rising and falling with the breath.
-    s.rightArm.rotation.set(-0.55 + breath * 0.025, 0, 0.06);
-    s.leftArm.rotation.set(-0.55 + breath * 0.025, 0, -0.06);
+    s.rightLeg.rotation.set(-1.45 + Math.sin(t * 1.1) * 0.07, 0, 0);
+    s.leftLeg.rotation.set(-1.45 + Math.sin(t * 1.1 + 2.2) * 0.07, 0, 0);
+    // Hands resting on the knees, angled out a little, rising and falling with the breath.
+    s.rightArm.rotation.set(-0.55 + breath * 0.025, 0, -0.16);
+    s.leftArm.rotation.set(-0.55 + breath * 0.025, 0, 0.16);
     s.body.rotation.x = 0.04 + breath * 0.012;
   } else {
     // Standing still, arms swaying gently with the breath.
