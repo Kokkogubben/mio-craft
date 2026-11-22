@@ -1,5 +1,6 @@
 // Draws the MioCraft logo: a copper block face with a green (oxidised) M,
-// as 16×16 pixel art, and writes it at the sizes the app needs.
+// as 16×16 pixel art, and writes it at the sizes the app needs. Also draws the
+// whole block in 3D (M on one side, C on the other) for the website.
 // The copper texture is our own (brushed streaks and a bevel), not Mojang's.
 //
 //   node design/tools/logo.mjs
@@ -61,29 +62,37 @@ const GREEN = ["#357a64", "#3f8f75", "#4ea384", "#5fb896", "#6cc4a2", "#86d4b4"]
 const SHADOW = "#24584a";
 
 /** Brushed copper: each row has its own tone, pixels vary a little, edges are bevelled. */
-function copper(x, y) {
-  let i = 5 + Math.round((noise(1, 0, y) - 0.5) * 1.6) + Math.round((noise(2, x, y) - 0.5) * 2);
+function copper(x, y, seed = 0) {
+  let i = 5 + Math.round((noise(1 + seed, 0, y) - 0.5) * 1.6) + Math.round((noise(2 + seed, x, y) - 0.5) * 2);
   if (y === 0 || x === 0) i = Math.max(i, 6); // lit top/left edge
   if (y === 15 || x === 15) i = Math.min(i, 2) - (x === 15 && y === 15 ? 1 : 0); // shaded bottom/right edge
   return COPPER[Math.max(0, Math.min(COPPER.length - 1, i))];
 }
 
 const M = ["XX......XX", "XXX....XXX", "XXXX..XXXX", "XX.XXXX.XX", "XX..XX..XX", "XX......XX", "XX......XX", "XX......XX"];
-const MX = 3, MY = 4;
-const onM = (x, y) => M[y - MY]?.[x - MX] === "X";
+const C = ["..XXXXXX", ".XXXXXXX", "XX......", "XX......", "XX......", "XX......", ".XXXXXXX", "..XXXXXX"];
+
+/**
+ * A 16×16 copper face with a green letter set into it (rows of "X", top-left
+ * at ox, oy), as a colour per pixel. No letter: plain copper.
+ */
+function face(rows, ox, oy, seed = 0, letterSeed = 11) {
+  const on = (x, y) => rows?.[y - oy]?.[x - ox] === "X";
+  return (x, y) => {
+    if (on(x, y)) {
+      // mostly mid greens; lighter along the top of a stroke, darker at its foot
+      let i = 1 + Math.floor(noise(letterSeed, x, y) * 4);
+      if (!on(x, y - 1)) i = Math.min(GREEN.length - 1, i + 1);
+      if (!on(x, y + 1)) i = Math.max(0, i - 1);
+      return GREEN[i];
+    }
+    if (on(x, y - 1)) return SHADOW; // the letter is set into the copper
+    return copper(x, y, seed);
+  };
+}
 
 /** The 16×16 logo, as a colour per pixel. */
-function logo(x, y) {
-  if (onM(x, y)) {
-    // mostly mid greens; lighter along the top of a stroke, darker at its foot
-    let i = 1 + Math.floor(noise(11, x, y) * 4);
-    if (!onM(x, y - 1)) i = Math.min(GREEN.length - 1, i + 1);
-    if (!onM(x, y + 1)) i = Math.max(0, i - 1);
-    return GREEN[i];
-  }
-  if (onM(x, y - 1)) return SHADOW; // the M is set into the copper
-  return copper(x, y);
-}
+const logo = face(M, 3, 4);
 
 const grid = Array.from({ length: 16 }, (_, y) => Array.from({ length: 16 }, (_, x) => hex(logo(x, y))));
 /** The logo scaled up with hard pixel edges. */
@@ -125,3 +134,47 @@ out("src-tauri/icons/128x128.png", scaled(128));
 out("src-tauri/icons/128x128@2x.png", scaled(256));
 out("src-tauri/icons/icon.png", scaled(512));
 out("src-tauri/icons/icon.ico", ico([16, 32, 48, 64, 128, 256]));
+
+// ---------- the block in 3D, for the website ----------
+
+/**
+ * The block seen from above at an angle, like an item in the game's inventory:
+ * the M face on the left, a C face on the right, plain copper on top. Each
+ * texture pixel is k screen pixels wide. Transparent around the block.
+ */
+function block(k) {
+  const h = k / 2, v = Math.round(k * 1.225);
+  const W = 32 * k, H = 16 * k + 16 * v;
+  // Each face: where its texture's (0, 0) corner lands, the screen step for one
+  // texture pixel along x (u) and down y (v), its colours, and how lit it is.
+  const faces = [
+    { o: [16 * k, 0], u: [k, h], v: [-k, h], px: face(null, 0, 0, 40), light: 1 },
+    { o: [0, 8 * k], u: [k, h], v: [0, v], px: face(M, 3, 4, 20, 31), light: 0.8 },
+    { o: [16 * k, 16 * k], u: [k, -h], v: [0, v], px: face(C, 4, 4, 60, 23), light: 0.62 },
+  ];
+  return {
+    W, H,
+    at(x, y) {
+      for (const f of faces) {
+        // Screen point → texture point, by inverting the face's 2×2 matrix.
+        const det = f.u[0] * f.v[1] - f.u[1] * f.v[0];
+        const dx = x + 0.5 - f.o[0], dy = y + 0.5 - f.o[1];
+        const s = (dx * f.v[1] - dy * f.v[0]) / det, t = (f.u[0] * dy - f.u[1] * dx) / det;
+        if (s < 0 || t < 0 || s >= 16 || t >= 16) continue;
+        const [r, g, b] = hex(f.px(Math.floor(s), Math.floor(t)));
+        return [Math.round(r * f.light), Math.round(g * f.light), Math.round(b * f.light), 255];
+      }
+      return [0, 0, 0, 0];
+    },
+  };
+}
+
+for (const k of [4, 16]) {
+  const b = block(k);
+  out(`design/logo/block-${b.W}.png`, png(b.W, b.H, (x, y) => b.at(x, y)));
+}
+// The website's favicon: the small block, centred on a square.
+{
+  const b = block(4), pad = (b.H - b.W) / 2;
+  out("design/logo/block-favicon.png", png(b.H, b.H, (x, y) => (x < pad || x >= pad + b.W ? [0, 0, 0, 0] : b.at(x - pad, y))));
+}

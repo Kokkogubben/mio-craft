@@ -13,7 +13,9 @@ headings.
 - **Pixel font:** Monocraft (`ui/public/fonts/Monocraft.ttf`).
 - **Logo:** a copper block face with an oxidised green M, 16 × 16 pixel art drawn by
   `design/tools/logo.mjs`. The script also writes `ui/public/icon.png` and every app icon in
-  `src-tauri/icons/` (scaled with hard pixel edges, so don't use `tauri icon` for it).
+  `src-tauri/icons/` (scaled with hard pixel edges, so don't use `tauri icon` for it), and the
+  whole block in 3D with M and C on its sides (`design/logo/block-*.png`), which the website uses
+  as its logo and favicon.
 - **Colours:** copper and verdigris from the logo, as variables at the top of `ui/src/style.css`.
   `body.legacy` holds the original palette.
 - **Scene:** a flat colour, `--scene` in `ui/src/style.css`.
