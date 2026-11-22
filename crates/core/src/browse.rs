@@ -699,7 +699,9 @@ async fn install_with(l: &Launcher, instance_id: &str, req: InstallRequest, pref
                     title: title.clone(),
                     page_url,
                     as_dependency: as_dep,
-                    download_url: Some(url),
+                    // Only Modrinth links are reused (in modpacks); CurseForge's
+                    // terms don't allow keeping data from its API beyond need.
+                    download_url: (source == Source::Modrinth).then_some(url),
                 },
             );
             save_tags(l, &inst.id, &tags).await?;
