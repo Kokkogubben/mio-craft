@@ -83,6 +83,7 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/accounts", get(accounts))
         .route("/accounts/login", post(login))
         .route("/accounts/{id}", delete(remove_account))
+        .route("/accounts/{id}/skin", get(account_skin))
         .route("/instances", get(list_instances).post(create_instance))
         .route("/instances/{id}", get(get_instance).patch(patch_instance).delete(delete_instance))
         .route("/instances/{id}/install", post(install_instance))
@@ -212,6 +213,13 @@ async fn login(State(s): State<AppState>) -> R<auth::DeviceCode> {
     let mut code = auth::begin_login(&s.l).await?;
     code.device_code.clear(); // never hand out the polling secret
     Ok(Json(code))
+}
+
+/// The account's skin as a PNG; the `x-skin-model` header is `slim` or `default`.
+async fn account_skin(State(s): State<AppState>, Path(id): Path<String>) -> std::result::Result<Response, ApiError> {
+    let skin = auth::skin(&s.l, &id).await?;
+    let model = if skin.slim { "slim" } else { "default" };
+    Ok(([("content-type", "image/png"), ("x-skin-model", model), ("cache-control", "no-store")], skin.png).into_response())
 }
 
 async fn remove_account(State(s): State<AppState>, Path(id): Path<String>) -> R<Value> {

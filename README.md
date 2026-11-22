@@ -296,4 +296,6 @@ development test client that Fabric's and NeoForge's own build tools provide
 playing. The launcher downloads game files from
 Mojang's servers and doesn't redistribute them.
 
-MioCraft is open source under the [MIT License](LICENSE).
+MioCraft is open source under the [MIT License](LICENSE). The
+[Monocraft](https://github.com/IdreesInc/Monocraft) font in `ui/public/fonts` is by Idrees Hassan,
+under the [SIL Open Font License 1.1](ui/public/fonts/Monocraft-OFL.txt).
