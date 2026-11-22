@@ -111,6 +111,8 @@ const IRIS_ID = "YL57xq9U";
 // ---------- state ----------
 
 const S = {
+  /** The launcher's settings, as last read or saved. */
+  cfg: null as any,
   /** The new look is on (experimental). */
   xp: false,
   view: "home" as View,
@@ -1130,8 +1132,22 @@ async function newInstanceModal() {
 
 type ClaudeCodeStatus = { claude_path: string | null; node_path: string | null; connected: boolean };
 
-/** The last Claude Code check, shown while Settings checks again (undefined = never checked). */
+/** The last Claude Code check (undefined = not done yet). */
 let lastCc: ClaudeCodeStatus | null | undefined;
+let ccCheck: Promise<void> | null = null;
+
+/** Check Claude Code (runs it, so it takes a few seconds) and update Settings if it's open. */
+function refreshClaudeCode(): Promise<void> {
+  ccCheck ??= api<ClaudeCodeStatus>("GET", "/claude-code")
+    .catch(() => null)
+    .then((cc) => {
+      lastCc = cc;
+      const line = document.querySelector("#cc-line");
+      if (line) line.innerHTML = claudeCodeBlock(cc);
+    })
+    .finally(() => (ccCheck = null));
+  return ccCheck;
+}
 
 function manualLine(cc: ClaudeCodeStatus | null): string {
   return `<p class="muted small">${cc?.connected ? "To connect it manually, run this in a terminal:" : "Or run this once in a terminal:"}</p>`;
@@ -1149,22 +1165,73 @@ function claudeCodeLine(cc: ClaudeCodeStatus | null): string {
           : `<p><button class="btn primary small" data-action="connect-claude" ${inTauri ? "" : "disabled"}>Connect automatically</button></p>`;
 }
 
+/** The Claude Code status, or placeholder lines while it's being checked. */
+function claudeCodeBlock(cc: ClaudeCodeStatus | null | undefined): string {
+  if (cc === undefined) return `<span class="skel-line" style="width:64%"></span><span class="skel-line" style="width:40%"></span>`;
+  return claudeCodeLine(cc) + manualLine(cc);
+}
+
+/** What Settings shows that doesn't change while the app runs, loaded once. */
+let settingsInfo: { path: string; version: string | null; status: any } | null = null;
+let settingsInfoLoad: Promise<void> | null = null;
+
+function loadSettingsInfo(): Promise<void> {
+  settingsInfoLoad ??= Promise.all([mcpServerPath(), appVersion().catch(() => null), api("GET", "/status")])
+    .then(([path, version, status]) => {
+      settingsInfo = { path, version, status };
+    })
+    .catch((e) => {
+      settingsInfoLoad = null;
+      throw e;
+    });
+  return settingsInfoLoad;
+}
+
+/** Settings' layout with placeholders, shown for the moment its data is still loading. */
+function settingsSkeleton(): string {
+  const section = (title: string, lines: number[], boxes: number) => `
+    <section class="settings-sec">
+      <h3>${title}</h3>
+      ${lines.map((w) => `<span class="skel-line" style="width:${w}%"></span>`).join("")}
+      ${'<span class="skel-box"></span>'.repeat(boxes)}
+    </section>`;
+  return `
+    <div id="settings-skeleton">
+      <h2>Settings</h2>
+      ${section("✦ Connect Claude Code", [64, 40], 1)}
+      ${section("Microsoft sign-in", [90, 55], 1)}
+      ${section("Mod browser", [80], 1)}
+      ${section("Game", [], 2)}
+      <div class="modal-actions"><button class="btn ghost" data-action="close-modal">Close</button></div>
+    </div>`;
+}
+
 async function settingsModal() {
-  // Checking Claude Code takes a few seconds, so the dialog opens without it
-  // and the line is filled in when the check is done.
-  const ccCheck = api<ClaudeCodeStatus>("GET", "/claude-code").catch(() => null);
-  const [cfg, path, status, version] = await Promise.all([
-    api("GET", "/config"),
-    mcpServerPath(),
-    api("GET", "/status"),
-    appVersion().catch(() => null),
-  ]);
+  refreshClaudeCode();
+  if (!S.cfg || !settingsInfo) {
+    openModal(settingsSkeleton());
+    try {
+      const [cfg] = await Promise.all([S.cfg ?? api("GET", "/config"), loadSettingsInfo()]);
+      S.cfg = cfg;
+    } catch (e) {
+      closeModal();
+      toast((e as Error).message, "err");
+      return;
+    }
+    // Closed while loading.
+    if (!document.querySelector("#settings-skeleton")) return;
+  }
+  renderSettings(S.cfg, settingsInfo!);
+}
+
+function renderSettings(cfg: any, info: { path: string; version: string | null; status: any }) {
+  const { path, version, status } = info;
   const cmd = `claude mcp add --scope user mio-craft -- node "${path}"`;
   openModal(`
     <h2>Settings</h2>
     <section class="settings-sec">
       <h3>✦ Connect Claude Code</h3>
-      <div id="cc-line">${lastCc === undefined ? `<p class="muted small">Checking for Claude Code…</p>${manualLine(null)}` : claudeCodeLine(lastCc) + manualLine(lastCc)}</div>
+      <div id="cc-line">${claudeCodeBlock(lastCc)}</div>
       <div class="copy"><code id="mcp-cmd">${esc(cmd)}</code><button class="btn small" data-copy="${esc(cmd)}">Copy</button></div>
       <p class="muted small">Then ask Claude Code something like "make a Fabric mod for my instance that adds a ruby ore". MioCraft needs to be open while Claude Code uses it.</p>
     </section>
@@ -1210,16 +1277,10 @@ async function settingsModal() {
       <button class="btn ghost" data-action="run-setup">Run setup again</button>
       <span><button class="btn ghost" data-action="close-modal">Close</button> <button class="btn primary" id="set-save">Save</button></span>
     </div>`);
-  ccCheck.then((cc) => {
-    lastCc = cc;
-    // The dialog may have been closed (or replaced) by now.
-    const line = document.querySelector("#cc-line");
-    if (line) line.innerHTML = claudeCodeLine(cc) + manualLine(cc);
-  });
   $("#set-save").addEventListener("click", async () => {
     const xp = $<HTMLInputElement>("#set-xp").checked;
     try {
-      await api("PATCH", "/config", {
+      S.cfg = await api("PATCH", "/config", {
         ms_client_id: $<HTMLInputElement>("#set-cid").value,
         default_ram_mb: Number($<HTMLInputElement>("#set-ram").value) || 4096,
         extra_jvm_args: $<HTMLInputElement>("#set-jvm").value.split(/\s+/).filter(Boolean),
@@ -1452,10 +1513,10 @@ async function setupModal(step = 0) {
 
   const root = document.querySelector<HTMLElement>("#modal-root .modal")!;
   const saveStep = async () => {
-    if (name === "curseforge") await api("PATCH", "/config", { curseforge_api_key: $<HTMLInputElement>("#setup-cf").value });
+    if (name === "curseforge") S.cfg = await api("PATCH", "/config", { curseforge_api_key: $<HTMLInputElement>("#setup-cf").value });
   };
   const finish = async () => {
-    await api("PATCH", "/config", { onboarded: true });
+    S.cfg = await api("PATCH", "/config", { onboarded: true });
     await loadAccounts();
     closeModal();
   };
@@ -1618,7 +1679,7 @@ document.addEventListener("click", async (ev) => {
       accountsModal();
       break;
     case "use-account":
-      await api("PATCH", "/config", { selected_account: el.dataset.id });
+      S.cfg = await api("PATCH", "/config", { selected_account: el.dataset.id });
       await loadAccounts();
       accountsModal();
       break;
@@ -1741,6 +1802,7 @@ document.addEventListener("click", async (ev) => {
       busy("connect", async () => {
         await api("POST", "/claude-code/connect", { mcp_path: await mcpServerPath() });
         toast("Claude Code is connected to the launcher");
+        lastCc = undefined;
         settingsModal();
       });
       break;
@@ -1888,9 +1950,13 @@ async function lookForUpdate(manual: boolean) {
   try {
     await connect();
     const cfg = await api("GET", "/config");
+    S.cfg = cfg;
     applyLook(!!cfg.experimental_ui);
     events(onEvent);
     await Promise.all([loadAccounts(), loadInstances()]);
+    // Get Settings ready in the background so it opens instantly.
+    loadSettingsInfo().catch(() => {});
+    refreshClaudeCode();
     if (!cfg.onboarded) setupModal(0);
     else lookForUpdate(false);
   } catch (e) {
