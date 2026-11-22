@@ -396,73 +396,6 @@ pub async fn usable_account(l: &Launcher, id: Option<&str>) -> Result<Account> {
     Ok(refreshed)
 }
 
-/// A player's skin texture (64×64 or legacy 64×32 PNG).
-pub struct Skin {
-    pub png: Vec<u8>,
-    /// The thin-armed ("Alex") model.
-    pub slim: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SkinMeta {
-    slim: bool,
-}
-
-/// The account's current skin. Fetched from Mojang and kept in the cache, so
-/// the last known skin still shows when offline.
-pub async fn skin(l: &Launcher, id: &str) -> Result<Skin> {
-    if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
-        bail!("Not an account ID: {id}");
-    }
-    let dir = l.paths.cache().join("skins");
-    let (png_path, meta_path) = (dir.join(format!("{id}.png")), dir.join(format!("{id}.json")));
-    match fetch_skin(l, id).await {
-        Ok(s) => {
-            tokio::fs::create_dir_all(&dir).await?;
-            tokio::fs::write(&png_path, &s.png).await?;
-            http::write_json(&meta_path, &SkinMeta { slim: s.slim }).await?;
-            Ok(s)
-        }
-        Err(e) => match tokio::fs::read(&png_path).await {
-            Ok(png) => {
-                let slim = http::read_json::<SkinMeta>(&meta_path).await.map(|m| m.slim).unwrap_or(false);
-                Ok(Skin { png, slim })
-            }
-            Err(_) => Err(e),
-        },
-    }
-}
-
-async fn fetch_skin(l: &Launcher, id: &str) -> Result<Skin> {
-    let acc = usable_account(l, Some(id)).await?;
-    if acc.id != id {
-        bail!("No signed-in account with ID {id}");
-    }
-    let resp = l.http.get(MC_PROFILE).bearer_auth(&acc.mc_token).send().await?;
-    if !resp.status().is_success() {
-        bail!("Could not read the Minecraft profile ({})", resp.status());
-    }
-    let profile: serde_json::Value = resp.json().await?;
-    let (url, slim) = active_skin(&profile).ok_or_else(|| anyhow!("This profile has no skin"))?;
-    let png = l.http.get(&url).send().await?.error_for_status()?.bytes().await?.to_vec();
-    if !png.starts_with(b"\x89PNG") {
-        bail!("The skin from Mojang isn't a PNG image");
-    }
-    Ok(Skin { png, slim })
-}
-
-/// The active skin's URL (always https) and whether it uses the slim model.
-fn active_skin(profile: &serde_json::Value) -> Option<(String, bool)> {
-    let skins = profile["skins"].as_array()?;
-    let s = skins.iter().find(|s| s["state"] == "ACTIVE").or(skins.first())?;
-    let url = s["url"].as_str()?;
-    let url = url.strip_prefix("http://").map_or(url.to_string(), |rest| format!("https://{rest}"));
-    if !url.starts_with("https://textures.minecraft.net/") {
-        return None;
-    }
-    Some((url, s["variant"].as_str().is_some_and(|v| v.eq_ignore_ascii_case("slim"))))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,17 +444,5 @@ mod tests {
         let file = std::fs::read_to_string(l.paths.accounts_file()).unwrap();
         assert!(!file.contains("old-refresh") && file.contains("tokens_in_keyring"), "{file}");
         assert_eq!(load_accounts(&l).await[0].mc_token, "old-mc");
-    }
-
-    #[test]
-    fn picks_the_active_skin() {
-        let p = json!({ "skins": [
-            { "state": "INACTIVE", "url": "https://textures.minecraft.net/texture/old", "variant": "CLASSIC" },
-            { "state": "ACTIVE", "url": "http://textures.minecraft.net/texture/new", "variant": "SLIM" },
-        ]});
-        assert_eq!(active_skin(&p), Some(("https://textures.minecraft.net/texture/new".into(), true)));
-        let other_host = json!({ "skins": [{ "state": "ACTIVE", "url": "https://example.com/x.png", "variant": "CLASSIC" }] });
-        assert_eq!(active_skin(&other_host), None);
-        assert_eq!(active_skin(&json!({})), None);
     }
 }

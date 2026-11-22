@@ -7,30 +7,12 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header id="topbar">
-      <button class="brand" data-action="view" data-view="home" aria-label="Home">
-        <img src="/icon.png" alt="" width="28" height="28" />
-        <span>MioCraft</span>
-      </button>
-      <nav class="topnav">
-        <button class="navtab" data-action="view" data-view="home">Home</button>
-        <button class="navtab" data-action="view" data-view="instances">Instances</button>
-      </nav>
-      <div id="top-right"></div>
-    </header>
-    <section id="home" class="view">
-      <div class="scene" aria-hidden="true"></div>
-      <div class="stage">
-        <div class="player">
-          <div id="player-label"></div>
-          <canvas id="skin" aria-label="Your player"></canvas>
-        </div>
-        <div id="home-play"></div>
-      </div>
-      <div id="home-recent"></div>
-    </section>
-    <div id="app" class="view">
+    <div id="app">
       <aside id="sidebar">
+        <div class="brand">
+          <img src="/icon.png" alt="" width="28" height="28" />
+          <span>MioCraft</span>
+        </div>
         <div class="side-head">
           <span>Instances</span>
           <span>
@@ -41,6 +23,7 @@
           </span>
         </div>
         <nav id="instance-list"></nav>
+        <div id="side-foot"></div>
       </aside>
       <main id="main"></main>
     </div>

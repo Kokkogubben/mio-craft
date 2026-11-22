@@ -17,7 +17,7 @@ MioCraft only talks to the services it needs to do what you ask:
 | Microsoft, Xbox Live and Minecraft services | Signing in and refreshing your session | The tokens Microsoft's sign-in flow requires |
 | GitHub (`github.com`) | At startup and when you press **Check for updates**; downloading an update you accept | A request for this project's latest release |
 | Discord (the app on your computer) | Only if you turn on **Show what I'm playing** in Settings, while a game or test client is running | The name of the instance or mod project, its Minecraft version and mod loader, and when it started. Discord shows this on your profile |
-| Minecraft services (`api.minecraftservices.com`, `textures.minecraft.net`) | Showing your skin and player head once you are signed in | Your Minecraft session token, to read which skin your profile uses |
+| `mc-heads.net` | Showing your player head once you are signed in | Your Minecraft account UUID |
 
 Every request identifies the app as `MioCraft/<version>` with a link to this
 repository. Each of these services has its own privacy policy that applies to
@@ -35,8 +35,7 @@ only to sign you in to Xbox Live and Minecraft services and to start the game.
 - **Sign-in tokens** are stored in Windows Credential Manager. Removing the
   account in MioCraft deletes them.
 - **Your Minecraft profile name and UUID** are stored in `accounts.json` in the
-  data folder (`%APPDATA%\MioCraft`). Your current skin is kept in
-  `cache\skins` there, so it still shows when you're offline.
+  data folder (`%APPDATA%\MioCraft`).
 - **Settings**, including the Azure client ID and CurseForge API key you enter,
   are stored in `config.json` in the data folder.
 - **Game files, instances, mods, logs and mod projects** are stored in the data

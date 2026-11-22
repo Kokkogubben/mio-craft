@@ -4,15 +4,6 @@ A pixel-art look for the launcher and the website: a full-window painted scene b
 screen, the player's own skin in the middle, chunky framed panels and buttons, and a pixel font for
 headings.
 
-## Placeholders in place now
-
-- **UI kit and silhouette:** `design/tools/ui-kit.mjs` generates the frames in `ui/public/ui/` and
-  `ui/public/skin/silhouette.png` in the app's grays and green. Hand-drawn files with the same names
-  and sizes replace them; don't rerun the script after that, or it overwrites them.
-- **Pixel font:** Monocraft (`ui/public/fonts/Monocraft.ttf`).
-- **Logo:** the current `ui/public/icon.png`.
-- **Scene:** a flat colour, `--scene` in `ui/src/style.css`.
-
 ## Ground rules
 
 - **Everything original.** No Mojang art (textures, the Steve/Alex skins, the Minecraft logo or font)
