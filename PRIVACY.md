@@ -10,7 +10,7 @@ MioCraft only talks to the services it needs to do what you ask:
 
 | Service | When | What is sent |
 |---|---|---|
-| Mojang (`piston-meta.mojang.com`, `resources.download.minecraft.net`, `libraries.minecraft.net`) | Listing versions, installing an instance | Download requests |
+| Mojang (`piston-meta.mojang.com`, `piston-data.mojang.com`, `resources.download.minecraft.net`, `libraries.minecraft.net`) | Listing versions, installing an instance, and once you're signed in, getting the game files the home screen's scene takes its block textures from (only if no Minecraft version is installed yet) | Download requests |
 | Fabric, Quilt, Legacy Fabric, NeoForge and Forge (`meta.fabricmc.net`, `meta.quiltmc.org`, `meta.legacyfabric.net`, `maven.neoforged.net`, `maven.minecraftforge.net`, `files.minecraftforge.net` and their download servers), Adoptium, JetBrains, Gradle | Listing loader versions, installing a mod loader, Java or build tools | Download requests, and the Minecraft version you picked |
 | Modrinth | Using the mod and shader browser, checking for mod updates, importing modpacks | Your search text, the instance's Minecraft version and loader, and which browser-installed mods to check for updates. Imported modpacks may also download files from GitHub or GitLab |
 | CurseForge | Only if you add a CurseForge API key | The same, plus your API key |

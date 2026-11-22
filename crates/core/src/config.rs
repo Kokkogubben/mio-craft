@@ -19,8 +19,9 @@ pub struct Config {
     pub onboarded: bool,
     /// Show what is being played on the user's Discord profile.
     pub discord_rpc: bool,
-    /// Use the new look (home screen with the player, pixel style). Experimental.
-    pub experimental_ui: bool,
+    /// Use the original layout (sidebar of instances) instead of the home screen with the player.
+    /// Replaces `experimental_ui` from 0.5, when the new look was opt-in; that setting is ignored.
+    pub legacy_look: bool,
     /// Use the original green and grey colours instead of the copper theme.
     pub legacy_colors: bool,
 }
@@ -35,7 +36,7 @@ impl Default for Config {
             curseforge_api_key: None,
             onboarded: false,
             discord_rpc: false,
-            experimental_ui: false,
+            legacy_look: false,
             legacy_colors: false,
         }
     }
@@ -64,7 +65,7 @@ pub struct ConfigPatch {
     pub curseforge_api_key: Option<String>,
     pub onboarded: Option<bool>,
     pub discord_rpc: Option<bool>,
-    pub experimental_ui: Option<bool>,
+    pub legacy_look: Option<bool>,
     pub legacy_colors: Option<bool>,
 }
 
@@ -93,8 +94,8 @@ impl Config {
         if let Some(v) = p.discord_rpc {
             self.discord_rpc = v;
         }
-        if let Some(v) = p.experimental_ui {
-            self.experimental_ui = v;
+        if let Some(v) = p.legacy_look {
+            self.legacy_look = v;
         }
         if let Some(v) = p.legacy_colors {
             self.legacy_colors = v;

@@ -26,6 +26,7 @@ MioCraft does three things:
 
 **Launcher**
 
+- **A home screen with your player**: your skin sits in a small 3D scene, with a Play button for your current instance and your recently played instances below. The scene uses the block textures from your own copy of the game once you're signed in, and flat colours until then. The original layout is still there as **Settings → Legacy → Legacy look**, next to **Legacy colors**
 - **Multiple instances** for any Minecraft version in Mojang's list (releases and snapshots), each **vanilla** or with a mod loader:
 
   | Loader | Minecraft versions |

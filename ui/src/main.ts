@@ -113,7 +113,7 @@ const IRIS_ID = "YL57xq9U";
 const S = {
   /** The launcher's settings, as last read or saved. */
   cfg: null as any,
-  /** The new look is on (experimental). */
+  /** The home screen look is on (off with Settings → Legacy → Legacy look). */
   xp: false,
   view: "home" as View,
   instances: [] as Instance[],
@@ -362,8 +362,9 @@ function setView(v: View) {
 let playerReady = false;
 
 const LEGACY_KEY = "miocraft.legacyColors";
+const LEGACY_LOOK_KEY = "miocraft.legacyLook";
 
-/** Switch between the copper colours and the original ones (Settings → Look → Legacy colors). */
+/** Switch between the copper colours and the original ones (Settings → Legacy → Legacy colors). */
 function applyColors(legacy: boolean) {
   document.body.classList.toggle("legacy", legacy);
   // Remembered here too, so the next start paints the right colours before the config has loaded.
@@ -372,14 +373,21 @@ function applyColors(legacy: boolean) {
   } catch {}
 }
 
+// Paint the remembered colours and layout before the config has loaded, so neither flashes.
 try {
   if (localStorage.getItem(LEGACY_KEY) === "1") document.body.classList.add("legacy");
-} catch {}
+  if (localStorage.getItem(LEGACY_LOOK_KEY) !== "1") document.body.classList.add("xp", "v-home");
+} catch {
+  document.body.classList.add("xp", "v-home");
+}
 
-/** Switch between the classic layout and the new look (Settings → Look). */
+/** Switch between the home screen look and the original layout (Settings → Legacy → Legacy look). */
 function applyLook(xp: boolean) {
   S.xp = xp;
   document.body.classList.toggle("xp", xp);
+  try {
+    localStorage.setItem(LEGACY_LOOK_KEY, xp ? "0" : "1");
+  } catch {}
   if (xp && !playerReady) {
     initPlayer($<HTMLCanvasElement>("#skin"), $("#player-label"));
     playerReady = true;
@@ -1273,10 +1281,10 @@ function renderSettings(cfg: any, info: { path: string; version: string | null; 
       </label>
     </section>
     <section class="settings-sec">
-      <h3>Look</h3>
+      <h3>Legacy</h3>
       <label class="live-opt">
-        <span class="switch"><input type="checkbox" id="set-xp" ${cfg.experimental_ui ? "checked" : ""}/><span></span></span>
-        <span><strong>New look <span class="badge live">Experimental</span></strong><span class="muted small">A home screen with your player and your recently played instances, and a pixel style. It's still being worked on, so some things may look unfinished.</span></span>
+        <span class="switch"><input type="checkbox" id="set-legacy-look" ${cfg.legacy_look ? "checked" : ""}/><span></span></span>
+        <span><strong>Legacy look</strong><span class="muted small">Use MioCraft's original layout, with your instances in a sidebar, instead of the home screen with your player.</span></span>
       </label>
       <label class="live-opt">
         <span class="switch"><input type="checkbox" id="set-legacy" ${cfg.legacy_colors ? "checked" : ""}/><span></span></span>
@@ -1297,7 +1305,7 @@ function renderSettings(cfg: any, info: { path: string; version: string | null; 
       <span><button class="btn ghost" data-action="close-modal">Close</button> <button class="btn primary" id="set-save">Save</button></span>
     </div>`);
   $("#set-save").addEventListener("click", async () => {
-    const xp = $<HTMLInputElement>("#set-xp").checked;
+    const xp = !$<HTMLInputElement>("#set-legacy-look").checked;
     const legacy = $<HTMLInputElement>("#set-legacy").checked;
     try {
       S.cfg = await api("PATCH", "/config", {
@@ -1306,7 +1314,7 @@ function renderSettings(cfg: any, info: { path: string; version: string | null; 
         extra_jvm_args: $<HTMLInputElement>("#set-jvm").value.split(/\s+/).filter(Boolean),
         curseforge_api_key: $<HTMLInputElement>("#set-cf").value,
         discord_rpc: $<HTMLInputElement>("#set-discord").checked,
-        experimental_ui: xp,
+        legacy_look: !xp,
         legacy_colors: legacy,
       });
       closeModal();
@@ -1974,7 +1982,7 @@ async function lookForUpdate(manual: boolean) {
     const cfg = await api("GET", "/config");
     S.cfg = cfg;
     applyColors(!!cfg.legacy_colors);
-    applyLook(!!cfg.experimental_ui);
+    applyLook(!cfg.legacy_look);
     events(onEvent);
     await Promise.all([loadAccounts(), loadInstances()]);
     // Get Settings ready in the background so it opens instantly.
