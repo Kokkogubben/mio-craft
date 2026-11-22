@@ -381,7 +381,7 @@ function applyLook(xp: boolean) {
   S.xp = xp;
   document.body.classList.toggle("xp", xp);
   if (xp && !playerReady) {
-    initPlayer($<HTMLCanvasElement>("#skin"));
+    initPlayer($<HTMLCanvasElement>("#skin"), $("#player-label"));
     playerReady = true;
     refreshPlayer();
   }

@@ -1761,6 +1761,23 @@ body.xp .scene {
   background: var(--scene);
 }
 
+/* The 3D scene fills the whole home screen, behind the controls. */
+body.xp #skin {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Moved above the player's head every frame (player.ts). */
+body.xp #player-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  will-change: transform;
+}
+
 body.xp .stage {
   position: relative;
   flex: 1;
@@ -1768,23 +1785,13 @@ body.xp .stage {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding-top: 12px;
+  justify-content: flex-end;
+  padding-bottom: 16px;
+  pointer-events: none;
 }
 
-body.xp .player {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-body.xp #skin {
-  cursor: grab;
-}
-
-body.xp #skin:active {
-  cursor: grabbing;
+body.xp .stage > * {
+  pointer-events: auto;
 }
 
 body.xp .nameplate {
