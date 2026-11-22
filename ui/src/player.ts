@@ -195,12 +195,12 @@ function pose(player: PlayerObject, t: number, delta: number) {
     s.body.rotation.x = lean;
     const [, hy, hz] = aboutHips(0, lean);
     s.head.position.set(0, hy, hz);
-    // Arms straight down and back, hands on the table behind, a little out to the sides.
+    // Hands resting on the knees, angled out a little, rising and falling with the breath.
     const [, sy, sz] = aboutHips(-2, lean);
     s.rightArm.position.set(-5, sy, sz);
     s.leftArm.position.set(5, sy, sz);
-    s.rightArm.rotation.set(0.27, 0, -0.08);
-    s.leftArm.rotation.set(0.27, 0, 0.08);
+    s.rightArm.rotation.set(-0.55 + breath * 0.025, 0, -0.1);
+    s.leftArm.rotation.set(-0.55 + breath * 0.025, 0, 0.1);
   } else {
     // Standing still, arms swaying gently with the breath.
     s.rightLeg.rotation.set(0, 0, 0);
