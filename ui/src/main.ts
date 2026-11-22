@@ -1,4 +1,5 @@
 import { api, apiBytes, appVersion, checkUpdate, connect, enc, events, inTauri, installUpdate, mcpServerPath, openPath, openUrl } from "./api";
+import { cachedHead, initPlayer, pausePlayer, showAccount } from "./player";
 
 // ---------- types ----------
 
@@ -13,8 +14,12 @@ interface Instance {
   game_dir: string;
   mods_dir: string;
   ram_mb: number | null;
+  created_at: number;
+  last_played: number | null;
   live?: LiveSettings;
 }
+
+type View = "home" | "instances";
 
 interface LiveSettings {
   hotswap: boolean;
@@ -106,6 +111,7 @@ const IRIS_ID = "YL57xq9U";
 // ---------- state ----------
 
 const S = {
+  view: "home" as View,
   instances: [] as Instance[],
   selected: null as string | null,
   tab: "mods" as Tab,
@@ -224,12 +230,16 @@ async function busy<T>(key: string, fn: () => Promise<T>): Promise<T | undefined
 
 const current = () => S.instances.find((i) => i.id === S.selected) ?? null;
 
+/** Most recently played first; never-played ones after them, newest first. */
+const byRecent = (list: Instance[]) =>
+  [...list].sort((a, b) => (b.last_played ?? 0) - (a.last_played ?? 0) || b.created_at - a.created_at);
+
 // ---------- data ----------
 
 async function loadInstances() {
   S.instances = await api<Instance[]>("GET", "/instances");
   S.instances.forEach((i) => (i.running ? S.running.add(`game:${i.id}`) : S.running.delete(`game:${i.id}`)));
-  if (!S.selected || !S.instances.some((i) => i.id === S.selected)) S.selected = S.instances[0]?.id ?? null;
+  if (!S.selected || !S.instances.some((i) => i.id === S.selected)) S.selected = byRecent(S.instances)[0]?.id ?? null;
   renderSidebar();
   await loadInstanceData();
 }
@@ -264,6 +274,8 @@ async function loadAccounts() {
   S.hasCfKey = status.has_curseforge_key;
   (status.running as string[]).forEach((r) => S.running.add(r));
   renderSidebar();
+  renderTopbar();
+  refreshPlayer();
 }
 
 // ---------- sidebar ----------
@@ -285,22 +297,132 @@ function renderSidebar() {
         )
         .join("")
     : `<p class="side-empty">No instances yet.</p>`;
+}
 
-  const acc = S.accounts.find((a) => a.selected) ?? S.accounts[0];
-  $("#side-foot").innerHTML = `
+// ---------- top bar & home ----------
+
+const selectedAccount = () => S.accounts.find((a) => a.selected) ?? S.accounts[0] ?? null;
+
+/** The account's head from its skin, or a plain tile until the skin has loaded. */
+function headImg(a: Account, px: number): string {
+  const head = cachedHead(a.id);
+  return head
+    ? `<img class="head" src="${head}" alt="" width="${px}" height="${px}"/>`
+    : `<span class="head blank" style="width:${px}px;height:${px}px"></span>`;
+}
+
+function renderTopbar() {
+  document.querySelectorAll<HTMLElement>(".navtab").forEach((t) => t.classList.toggle("active", t.dataset.view === S.view));
+  const acc = selectedAccount();
+  $("#top-right").innerHTML = `
     ${
       acc
-        ? `<button class="account" data-action="accounts"><img src="https://mc-heads.net/avatar/${esc(acc.id)}/32" alt="" width="24" height="24" onerror="this.style.visibility='hidden'"/><span>${esc(acc.name)}</span></button>`
-        : `<button class="account signin" data-action="login">Sign in with Microsoft</button>`
+        ? `<button class="account" data-action="accounts" title="Accounts">${headImg(acc, 24)}<span>${esc(acc.name)}</span></button>`
+        : `<button class="btn" data-action="login">Sign in</button>`
     }
-    <button class="icon-btn" data-action="settings" title="Settings" aria-label="Settings">
+    <button class="btn square" data-action="settings" title="Settings" aria-label="Settings">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </button>`;
+}
+
+/** Load the selected account's skin into the player and the top bar. */
+async function refreshPlayer() {
+  const acc = selectedAccount();
+  await showAccount(acc?.id ?? null);
+  renderTopbar();
+  renderHome();
+}
+
+function setView(v: View) {
+  S.view = v;
+  document.body.classList.toggle("v-home", v === "home");
+  pausePlayer(v !== "home");
+  renderTopbar();
+  renderHome();
+}
+
+const RECENT_LIMIT = 6;
+// Drawn on a pixel grid so they match the pixel font.
+const PLAY_ICON = `<svg class="pix-icon" width="18" height="18" viewBox="0 0 9 9" shape-rendering="crispEdges" fill="currentColor"><path d="M2 1h2v1h1v1h1v1h1v1h-1v1h-1v1h-1v1h-2z"/></svg>`;
+const STOP_ICON = `<svg class="pix-icon" width="18" height="18" viewBox="0 0 9 9" shape-rendering="crispEdges" fill="currentColor"><path d="M2 2h5v5h-5z"/></svg>`;
+
+function instCard(i: Instance, action: string): string {
+  const running = S.running.has(`game:${i.id}`);
+  const when = running ? '<span class="dot" title="Running"></span>' : `<span class="muted small">${i.last_played ? ago(i.last_played) : "Never played"}</span>`;
+  return `
+    <button class="icard ${i.id === S.selected ? "active" : ""}" data-action="${action}" data-id="${esc(i.id)}" title="${action === "pick-instance" ? "Double-click to open" : ""}">
+      <span class="inst-icon ${esc(i.loader)}">${esc(i.loader[0].toUpperCase())}</span>
+      <span class="inst-text">
+        <span class="inst-name">${esc(i.name)}</span>
+        <span class="inst-meta">${esc(i.mc_version)} · ${loaderLabel(i.loader)}</span>
+      </span>
+      ${when}
+    </button>`;
+}
+
+function renderHome() {
+  if (S.view !== "home") return;
+  const acc = selectedAccount();
+  $("#player-label").innerHTML = acc
+    ? `<button class="nameplate" data-action="accounts">${esc(acc.name)}</button>`
+    : `<button class="nameplate" data-action="login">Sign in</button>`;
+
+  const inst = current();
+  if (!inst) {
+    $("#home-play").innerHTML = `<button class="btn play big" data-action="new-instance"><span class="play-main">New instance</span><span class="play-sub">Pick a version and a loader</span></button>`;
+  } else {
+    const running = S.running.has(`game:${inst.id}`);
+    const launching = S.busy.has(`launch:${inst.id}`);
+    const main = running ? "Stop" : launching ? "Starting…" : inst.installed ? "Play" : "Install & play";
+    $("#home-play").innerHTML = `
+      <button class="btn ${running ? "danger" : "play"} big" data-action="${running ? "stop" : "play"}" ${launching ? "disabled" : ""}>
+        <span class="play-main">${running ? STOP_ICON : PLAY_ICON} ${main}</span>
+        <span class="play-sub">${esc(inst.name)} · ${esc(inst.mc_version)}${inst.loader === "vanilla" ? "" : ` ${loaderLabel(inst.loader)}`}</span>
+      </button>
+      <button class="btn square big-square" data-action="choose-instance" title="Choose instance" aria-label="Choose instance">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square"><path d="M4 6h2M10 6h10M4 12h2M10 12h10M4 18h2M10 18h10"/></svg>
+      </button>`;
+  }
+
+  const recent = byRecent(S.instances).slice(0, RECENT_LIMIT);
+  $("#home-recent").innerHTML = `
+    <div class="recent">
+      <div class="recent-head">
+        <span class="recent-title">Recently played</span>
+        <span class="grow"></span>
+        <button class="btn small" data-action="new-instance">+ New</button>
+        <button class="btn small" data-action="view" data-view="instances">View all</button>
+      </div>
+      ${
+        recent.length
+          ? `<div class="recent-grid">${recent.map((i) => instCard(i, "pick-instance")).join("")}</div>`
+          : `<p class="muted">No instances yet. Make one and it shows up here.</p>`
+      }
+    </div>`;
+}
+
+function chooseInstanceModal() {
+  openModal(`
+    <h2>Choose instance</h2>
+    <div class="pick-list">${byRecent(S.instances).map((i) => instCard(i, "choose-pick")).join("")}</div>
+    <div class="modal-actions">
+      <button class="btn ghost" data-action="close-modal">Close</button>
+    </div>`);
+}
+
+async function selectInstance(id: string) {
+  S.selected = id;
+  S.modFilter = "";
+  S.browse.instance = null;
+  S.browse.hits = [];
+  renderSidebar();
+  await loadInstanceData();
 }
 
 // ---------- main panel ----------
 
 function renderMain() {
+  renderHome();
   const main = $("#main");
   const inst = current();
   if (!inst) {
@@ -1088,7 +1210,7 @@ function accountsModal() {
       ${S.accounts
         .map(
           (a) => `<div class="acc-row">
-            <img src="https://mc-heads.net/avatar/${esc(a.id)}/32" alt="" width="28" height="28" onerror="this.style.visibility='hidden'"/>
+            ${headImg(a, 28)}
             <span class="grow">${esc(a.name)}${a.selected ? ' <span class="badge ok">In use</span>' : ""}</span>
             ${a.selected ? "" : `<button class="btn small ghost" data-action="use-account" data-id="${esc(a.id)}">Use</button>`}
             <button class="btn small ghost" data-action="remove-account" data-id="${esc(a.id)}">Remove</button>
@@ -1405,12 +1527,20 @@ document.addEventListener("click", async (ev) => {
   const inst = current();
   switch (a) {
     case "select":
-      S.selected = el.dataset.id!;
-      S.modFilter = "";
-      S.browse.instance = null;
-      S.browse.hits = [];
-      renderSidebar();
-      await loadInstanceData();
+      await selectInstance(el.dataset.id!);
+      break;
+    case "view":
+      setView(el.dataset.view as View);
+      break;
+    case "pick-instance":
+      if (el.dataset.id !== S.selected) await selectInstance(el.dataset.id!);
+      break;
+    case "choose-instance":
+      chooseInstanceModal();
+      break;
+    case "choose-pick":
+      closeModal();
+      await selectInstance(el.dataset.id!);
       break;
     case "tab":
       S.tab = el.dataset.tab as Tab;
@@ -1663,6 +1793,12 @@ document.addEventListener("keydown", (ev) => {
   if (ev.key === "Escape") closeModal();
 });
 
+// Double-clicking an instance card on the home screen opens its page.
+document.addEventListener("dblclick", (ev) => {
+  const card = (ev.target as HTMLElement).closest<HTMLElement>('[data-action="pick-instance"]');
+  if (card) setView("instances");
+});
+
 // ---------- app updates ----------
 
 /** Ask the shell for a newer release and offer it. `manual` reports "up to date" and errors too. */
@@ -1692,12 +1828,15 @@ async function lookForUpdate(manual: boolean) {
 (async () => {
   try {
     await connect();
+    initPlayer($<HTMLCanvasElement>("#skin"));
+    setView("home");
     events(onEvent);
     await Promise.all([loadAccounts(), loadInstances()]);
     const cfg = await api("GET", "/config");
     if (!cfg.onboarded) setupModal(0);
     else lookForUpdate(false);
   } catch (e) {
+    setView("instances");
     $("#main").innerHTML = `<div class="empty"><h1>Couldn't start</h1><p>${esc((e as Error).message)}</p></div>`;
   }
 })();

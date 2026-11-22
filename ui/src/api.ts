@@ -50,6 +50,17 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
   return data as T;
 }
 
+/** GET a binary response (an image, say) along with its headers. */
+export async function apiBlob(path: string): Promise<{ blob: Blob; headers: Headers }> {
+  await connect();
+  const res = await fetch(base() + path, { headers: { Authorization: `Bearer ${info!.token}` } });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error((text && JSON.parse(text).error) || `HTTP ${res.status}`);
+  }
+  return { blob: await res.blob(), headers: res.headers };
+}
+
 export async function apiBytes<T = any>(path: string, data: ArrayBuffer): Promise<T> {
   await connect();
   const res = await fetch(base() + path, {

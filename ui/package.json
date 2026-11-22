@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.0.0"
+    "@tauri-apps/api": "^2.0.0",
+    "skinview3d": "^3.4.2"
   },
   "devDependencies": {
     "typescript": "^5.6.0",
