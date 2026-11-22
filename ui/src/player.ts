@@ -4,9 +4,9 @@
 // from Mojang.
 
 import { FunctionAnimation, SkinViewer, type PlayerObject } from "skinview3d";
-import { Group, Mesh, MeshBasicMaterial, Vector3 } from "three";
+import { DirectionalLight, Group, Mesh, MeshBasicMaterial, PCFSoftShadowMap, Vector3 } from "three";
 import { api, apiBlob, enc } from "./api";
-import { buildAtlas, buildDiorama, loadDiorama, textureNames, type Structure } from "./scene";
+import { buildAtlas, buildDiorama, loadDiorama, makePetals, SUN, textureNames, type Petals, type Structure } from "./scene";
 
 const SILHOUETTE = "/skin/silhouette.png";
 const SCENE = "/scene/home.mcstructure";
@@ -47,6 +47,7 @@ let box: HTMLElement | null = null;
 function setSeated(on: boolean) {
   seated = on;
   if (diorama) diorama.visible = on;
+  if (petals) petals.object.visible = on;
   placeCamera();
   void loadTextures();
 }
@@ -54,6 +55,7 @@ function setSeated(on: boolean) {
 // ---------- real textures ----------
 
 let structure: Structure | null = null;
+let petals: Petals | null = null;
 let textured = false;
 let texturing = false;
 
@@ -90,8 +92,15 @@ function fadeIn(next: Group) {
   diorama = next;
   next.visible = seated;
   const mats: MeshBasicMaterial[] = [];
+  // The new shadow layer takes over at the end, so shadows don't double up during the fade.
+  const shadows: Mesh[] = [];
   next.traverse((o) => {
-    if (o instanceof Mesh) mats.push(o.material as MeshBasicMaterial);
+    if (!(o instanceof Mesh)) return;
+    if (o.material instanceof MeshBasicMaterial) mats.push(o.material);
+    else {
+      o.visible = false;
+      shadows.push(o);
+    }
   });
   const set = (k: number) =>
     mats.forEach((m) => {
@@ -111,12 +120,15 @@ function fadeIn(next: Group) {
       m.transparent = false;
       m.needsUpdate = true;
     });
+    shadows.forEach((m) => (m.visible = true));
     if (old && viewer) {
       viewer.scene.remove(old);
       old.traverse((o) => {
         if (o instanceof Mesh) {
           o.geometry.dispose();
-          (o.material as MeshBasicMaterial).dispose();
+          const m = o.material as MeshBasicMaterial;
+          m.dispose();
+          o.customDepthMaterial?.dispose();
         }
       });
     }
@@ -160,6 +172,7 @@ const headPos = new Vector3();
 function pose(player: PlayerObject, t: number, delta: number) {
   const s = player.skin;
   const breath = Math.sin(t * 1.6);
+  if (seated) petals?.update(delta);
   if (seated) {
     // Legs forward over the table's edge, swinging a little.
     s.rightLeg.rotation.set(-1.45 + Math.sin(t * 1.1) * 0.07, 0.12, 0);
@@ -216,6 +229,7 @@ export function initPlayer(canvas: HTMLCanvasElement, nameLabel: HTMLElement) {
   viewer.controls.enablePan = false;
   viewer.controls.maxDistance = 5000;
   viewer.animation = new FunctionAnimation(pose);
+  addSun(viewer);
   placeCamera();
   shown = "";
 
@@ -247,11 +261,36 @@ export function initPlayer(canvas: HTMLCanvasElement, nameLabel: HTMLElement) {
       diorama.visible = seated;
       viewer.scene.add(diorama);
       structure = d.structure;
+      petals = makePetals(d.structure);
+      if (petals) {
+        petals.object.visible = seated;
+        viewer.scene.add(petals.object);
+      }
       void loadTextures();
       if (d.seat) seat.copy(d.seat);
       placeCamera();
     })
     .catch((e) => console.warn("Home scene:", e));
+}
+
+/**
+ * Sunlight that only casts shadows: the player and the blocks keep their own
+ * lighting, and shadows fall on the scene (see the shadow layer in scene.ts).
+ */
+function addSun(v: SkinViewer) {
+  v.renderer.shadowMap.enabled = true;
+  v.renderer.shadowMap.type = PCFSoftShadowMap;
+  const sun = new DirectionalLight(0xffffff, 0);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -200, right: 200, top: 200, bottom: -200, near: 1, far: 1000 });
+  sun.shadow.bias = -0.0005;
+  sun.shadow.normalBias = 0.5;
+  sun.position.copy(SUN).multiplyScalar(450);
+  v.scene.add(sun, sun.target);
+  v.playerObject.traverse((o) => {
+    if (o instanceof Mesh) o.castShadow = true;
+  });
 }
 
 /** Stop drawing frames while the home screen is hidden. */

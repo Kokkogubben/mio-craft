@@ -6,9 +6,15 @@
 // launcher. 1 block = 16 units, the same scale as the player model.
 
 import {
-  BufferAttribute, BufferGeometry, CanvasTexture, Color, DoubleSide, FrontSide, Group, Mesh,
-  MeshBasicMaterial, NearestFilter, Texture, Vector3,
+  BufferAttribute, BufferGeometry, CanvasTexture, Color, DoubleSide, FrontSide, Group, InstancedMesh, Mesh,
+  MeshBasicMaterial, MeshDepthMaterial, NearestFilter, Object3D, PlaneGeometry, RGBADepthPacking,
+  ShadowMaterial, Texture, Vector3,
 } from "three";
+
+/** Where the sunlight comes from: high, behind the scene on the right, so shadows fall towards the camera. */
+export const SUN = new Vector3(-0.2, 1.4, 1).normalize();
+/** How dark shadows are. */
+const SHADOW_OPACITY = 0.32;
 
 export type Block = { name: string; states: Record<string, unknown> };
 export type Structure = { size: [number, number, number]; palette: Block[]; indices: Int32Array };
@@ -340,6 +346,10 @@ export function buildDiorama(s: Structure, atlas?: Atlas): Diorama {
 
   const cubes = new Builder(atlas);
   const plants = new Builder(atlas);
+  // The surfaces shadows fall on: everything that faces the sun. (Faces turned
+  // away are already shaded, so they don't get darker still.)
+  const ground = new Builder();
+  const facesSun = (d: readonly number[]) => d[0] * SUN.x + d[1] * SUN.y + d[2] * SUN.z > 0.05;
   let seat: Vector3 | null = null;
   const ox = -X / 2, oz = -Z / 2;
 
@@ -394,6 +404,7 @@ export function buildDiorama(s: Structure, atlas?: Atlas): Diorama {
           // Leaves hide the faces of the same leaves beside them, like the game's fast leaves.
           if (!opaque[i] && at(nx, ny, nz) === i) continue;
           const v = f.corners.map((c) => [bx + c[0] * 16, by + c[1] * 16, bz + c[2] * 16]);
+          if (facesSun(f.dir)) ground.quad(v, "", 1);
           const slot = slotFor(block, f.name);
           if (slot) {
             // Bark runs along a log, so turn it on logs lying on their side.
@@ -416,8 +427,145 @@ export function buildDiorama(s: Structure, atlas?: Atlas): Diorama {
 
   const map = atlas?.texture ?? null;
   const group = new Group();
-  group.add(cubes.mesh(map), plants.mesh(map, true));
+  for (const m of [cubes.mesh(map), plants.mesh(map, true)]) {
+    m.castShadow = true;
+    // See-through pixels (leaves, flowers) let light through.
+    if (map) m.customDepthMaterial = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, map, alphaTest: 0.5 });
+    group.add(m);
+  }
+  group.add(shadowLayer(ground));
   return { group, seat, size: new Vector3(X * 16, Y * 16, Z * 16), structure: s };
+}
+
+/**
+ * Shadows, drawn as a see-through layer over the scene, so the blocks keep
+ * their own flat shading and the sun only adds shadow.
+ */
+function shadowLayer(b: Builder): Mesh {
+  const g = new BufferGeometry();
+  g.setAttribute("position", new BufferAttribute(new Float32Array(b.pos), 3));
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  const m = new Mesh(
+    g,
+    new ShadowMaterial({
+      opacity: SHADOW_OPACITY,
+      transparent: true,
+      depthWrite: false,
+      side: DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -4,
+    }),
+  );
+  m.userData.opacity = SHADOW_OPACITY;
+  m.receiveShadow = true;
+  m.renderOrder = 1;
+  return m;
+}
+
+// ---------- falling petals ----------
+
+export type Petals = { object: InstancedMesh; update(dt: number): void };
+
+const PETAL_COLOURS = ["#f7c1d9", "#eea5c6", "#fbd3e4", "#e892bb"];
+
+/**
+ * Petals drifting down from under the cherry leaves and settling on the
+ * ground for a moment. Null when the structure has no leaves to fall from.
+ */
+export function makePetals(s: Structure, count = 40): Petals | null {
+  const [X, Y, Z] = s.size;
+  const at = (x: number, y: number, z: number) =>
+    x < 0 || y < 0 || z < 0 || x >= X || y >= Y || z >= Z ? -1 : s.indices[x * Y * Z + y * Z + z];
+  const name = (i: number) => (i < 0 ? "air" : s.palette[i].name);
+  const leafy = (i: number) => name(i) === "cherry_leaves";
+  const ox = -X / 2, oz = -Z / 2;
+
+  // Where petals start (the underside of the canopy) and the ground height of each column.
+  const starts: [number, number, number][] = [];
+  const groundY = new Float32Array(X * Z).fill(-1);
+  for (let x = 0; x < X; x++)
+    for (let z = 0; z < Z; z++) {
+      for (let y = Y - 1; y >= 0; y--) {
+        const i = at(x, y, z);
+        const n = name(i);
+        if (leafy(i) && !leafy(at(x, y - 1, z)) && name(at(x, y - 1, z)) === "air") starts.push([(x + ox) * 16, y * 16, (z + oz) * 16]);
+        if (groundY[x * Z + z] < 0 && i >= 0 && !SKIP.has(n) && !n.endsWith("_leaves") && !CROSS.has(n))
+          groundY[x * Z + z] = FLAT.has(n) ? y * 16 + 2.5 : (y + 1) * 16;
+      }
+    }
+  if (!starts.length) return null;
+  const groundAt = (wx: number, wz: number) => {
+    const x = Math.floor(wx / 16 - ox), z = Math.floor(wz / 16 - oz);
+    return x < 0 || z < 0 || x >= X || z >= Z ? null : groundY[x * Z + z];
+  };
+
+  const mesh = new InstancedMesh(new PlaneGeometry(2.2, 1.6), new MeshBasicMaterial({ side: DoubleSide }), count);
+  const colour = new Color();
+  for (let i = 0; i < count; i++) mesh.setColorAt(i, colour.set(PETAL_COLOURS[i % PETAL_COLOURS.length]));
+
+  const pos = new Float32Array(count * 3);
+  const fall = new Float32Array(count); // speed, units per second
+  const phase = new Float32Array(count);
+  const rest = new Float32Array(count); // seconds lying on the ground, -1 while falling
+  const spin = new Float32Array(count * 2);
+
+  const spawn = (i: number, anywhere: boolean) => {
+    const [sx, sy, sz] = starts[Math.floor(Math.random() * starts.length)];
+    pos[i * 3] = sx + Math.random() * 16;
+    pos[i * 3 + 2] = sz + Math.random() * 16;
+    const g = groundAt(pos[i * 3], pos[i * 3 + 2]) ?? 0;
+    // At start-up, spread them over the whole fall so they don't arrive all at once.
+    pos[i * 3 + 1] = anywhere ? g + Math.random() * (sy - g) : sy - 1;
+    fall[i] = 7 + Math.random() * 5;
+    phase[i] = Math.random() * Math.PI * 2;
+    spin[i * 2] = 1.5 + Math.random() * 2;
+    spin[i * 2 + 1] = 1 + Math.random() * 2;
+    rest[i] = -1;
+  };
+  for (let i = 0; i < count; i++) spawn(i, true);
+
+  const o = new Object3D();
+  let t = 0;
+  const update = (dt: number) => {
+    dt = Math.min(dt, 0.1); // after a pause, don't jump
+    t += dt;
+    for (let i = 0; i < count; i++) {
+      const p = i * 3;
+      if (rest[i] >= 0) {
+        // Lying on the ground; shrink away after a while, then fall again.
+        rest[i] += dt;
+        const left = 1 - Math.max(0, rest[i] - 2.5) / 0.6;
+        if (left <= 0) spawn(i, false);
+        o.position.set(pos[p], pos[p + 1], pos[p + 2]);
+        o.rotation.set(-Math.PI / 2, 0, phase[i]);
+        o.scale.setScalar(Math.max(left, 0.001));
+      } else {
+        const sway = Math.sin(t * 1.4 + phase[i]);
+        pos[p] += (4 + sway * 7) * dt; // a light breeze towards +x
+        pos[p + 1] -= fall[i] * dt;
+        pos[p + 2] += Math.cos(t * 1.1 + phase[i]) * 4 * dt;
+        const g = groundAt(pos[p], pos[p + 2]);
+        if (g === null) {
+          spawn(i, false);
+          continue;
+        }
+        if (pos[p + 1] <= g + 0.2) {
+          pos[p + 1] = g + 0.2;
+          rest[i] = 0;
+        }
+        o.position.set(pos[p], pos[p + 1], pos[p + 2]);
+        o.rotation.set(t * spin[i * 2] + phase[i], sway * 0.8, t * spin[i * 2 + 1]);
+        o.scale.setScalar(1);
+      }
+      o.updateMatrix();
+      mesh.setMatrixAt(i, o.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  };
+  update(0);
+  return { object: mesh, update };
 }
 
 /** Fetch and build the home diorama in flat colours. */
