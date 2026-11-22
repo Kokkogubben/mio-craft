@@ -19,6 +19,8 @@ pub struct Config {
     pub onboarded: bool,
     /// Show what is being played on the user's Discord profile.
     pub discord_rpc: bool,
+    /// Use the new look (home screen with the player, pixel style). Experimental.
+    pub experimental_ui: bool,
 }
 
 impl Default for Config {
@@ -31,6 +33,7 @@ impl Default for Config {
             curseforge_api_key: None,
             onboarded: false,
             discord_rpc: false,
+            experimental_ui: false,
         }
     }
 }
@@ -58,6 +61,7 @@ pub struct ConfigPatch {
     pub curseforge_api_key: Option<String>,
     pub onboarded: Option<bool>,
     pub discord_rpc: Option<bool>,
+    pub experimental_ui: Option<bool>,
 }
 
 impl Config {
@@ -84,6 +88,9 @@ impl Config {
         }
         if let Some(v) = p.discord_rpc {
             self.discord_rpc = v;
+        }
+        if let Some(v) = p.experimental_ui {
+            self.experimental_ui = v;
         }
     }
 }

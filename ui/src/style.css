@@ -1401,7 +1401,8 @@ button.link.muted {
 /* =====================================================================
    Pixel theme: framed 9-slice buttons and panels (ui/public/ui/*.png),
    the Monocraft font for headings and controls, a top bar and the home
-   screen. Colours stay the app's grays and grass green.
+   screen. Colours stay the app's grays and grass green. Everything here
+   applies only with body.xp, the "New look" switch in Settings.
    ===================================================================== */
 
 @font-face {
@@ -1410,7 +1411,7 @@ button.link.muted {
   font-display: block;
 }
 
-:root {
+body.xp {
   --pixel: "Monocraft", var(--mono);
   /* placeholder for the home scene until the artwork exists */
   --scene: #1e2620;
@@ -1418,23 +1419,23 @@ button.link.muted {
   --radius: 0;
 }
 
-body {
+body.xp {
   display: flex;
   flex-direction: column;
 }
 
-h1,
-h2,
-h3,
-.brand,
-.navtab,
-.btn,
-.tab,
-.side-head,
-.recent-title,
-.nameplate,
-.inst-icon,
-.modal h2 {
+body.xp h1,
+body.xp h2,
+body.xp h3,
+body.xp .brand,
+body.xp .navtab,
+body.xp .btn,
+body.xp .tab,
+body.xp .side-head,
+body.xp .recent-title,
+body.xp .nameplate,
+body.xp .inst-icon,
+body.xp .modal h2 {
   font-family: var(--pixel);
   font-variant-ligatures: none;
   letter-spacing: 0;
@@ -1442,7 +1443,7 @@ h3,
 
 /* ---------- 9-slice frames ---------- */
 
-.btn {
+body.xp .btn {
   border: 8px solid transparent;
   border-radius: 0;
   border-image: url("/ui/button.png") 4 fill / 8px stretch;
@@ -1456,74 +1457,74 @@ h3,
   text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
 }
 
-.btn:hover:not(:disabled) {
+body.xp .btn:hover:not(:disabled) {
   filter: none;
   border-image-source: url("/ui/button-hover.png");
 }
 
-.btn:active:not(:disabled) {
+body.xp .btn:active:not(:disabled) {
   border-image-source: url("/ui/button-down.png");
   padding: 2px 8px 2px;
 }
 
-.btn:disabled {
+body.xp .btn:disabled {
   opacity: 0.6;
 }
 
-.btn.small {
+body.xp .btn.small {
   padding: 0 6px 2px;
   font-size: 12px;
   line-height: 16px;
 }
 
-.btn.small:active:not(:disabled) {
+body.xp .btn.small:active:not(:disabled) {
   padding: 1px 6px 1px;
 }
 
-.btn.ghost {
+body.xp .btn.ghost {
   background: none;
   border-color: transparent;
 }
 
-.btn.primary,
-.btn.play {
+body.xp .btn.primary,
+body.xp .btn.play {
   border-image-source: url("/ui/play.png");
   color: #fff;
   box-shadow: none;
 }
 
-.btn.primary:hover:not(:disabled),
-.btn.play:hover:not(:disabled) {
+body.xp .btn.primary:hover:not(:disabled),
+body.xp .btn.play:hover:not(:disabled) {
   border-image-source: url("/ui/play-hover.png");
 }
 
-.btn.primary:active:not(:disabled),
-.btn.play:active:not(:disabled) {
+body.xp .btn.primary:active:not(:disabled),
+body.xp .btn.play:active:not(:disabled) {
   border-image-source: url("/ui/play-down.png");
 }
 
-.btn.play,
-.btn.danger {
+body.xp .btn.play,
+body.xp .btn.danger {
   padding: 3px 22px 5px;
   font-size: 16px;
   font-weight: 400;
 }
 
-.btn.danger {
+body.xp .btn.danger {
   border-image-source: url("/ui/danger.png");
   background: none;
   color: #fff;
 }
 
-.btn.danger:hover:not(:disabled) {
+body.xp .btn.danger:hover:not(:disabled) {
   border-image-source: url("/ui/danger-hover.png");
 }
 
-.btn.danger:active:not(:disabled) {
+body.xp .btn.danger:active:not(:disabled) {
   border-image-source: url("/ui/danger-down.png");
 }
 
-.btn.danger.ghost {
+body.xp .btn.danger.ghost {
   border-image-source: url("/ui/button.png");
   background: none;
   color: #ff8c84;
@@ -1531,13 +1532,13 @@ h3,
   font-size: 14px;
 }
 
-.btn.square {
+body.xp .btn.square {
   padding: 1px 3px 3px;
   display: inline-grid;
   place-items: center;
 }
 
-.input {
+body.xp .input {
   border: 6px solid transparent;
   border-radius: 0;
   border-image: url("/ui/input.png") 4 fill / 6px stretch;
@@ -1546,13 +1547,13 @@ h3,
   padding: 2px 4px;
 }
 
-.input:focus {
+body.xp .input:focus {
   border-color: transparent;
   outline: 2px solid var(--grass-dark);
   outline-offset: 0;
 }
 
-.modal {
+body.xp .modal {
   border: 8px solid transparent;
   border-radius: 0;
   border-image: url("/ui/panel.png") 4 fill / 8px stretch;
@@ -1561,7 +1562,7 @@ h3,
   padding: 16px 18px;
 }
 
-.inst-icon {
+body.xp .inst-icon {
   border-radius: 0;
   font-weight: 400;
   box-shadow: inset -3px -3px 0 rgba(0, 0, 0, 0.25), inset 3px 3px 0 rgba(255, 255, 255, 0.18);
@@ -1570,7 +1571,7 @@ h3,
 
 /* ---------- top bar ---------- */
 
-#topbar {
+body.xp #topbar {
   flex: none;
   display: flex;
   align-items: center;
@@ -1583,7 +1584,7 @@ h3,
   z-index: 2;
 }
 
-#topbar .brand {
+body.xp #topbar .brand {
   border: 0;
   background: none;
   padding: 0 4px;
@@ -1592,16 +1593,16 @@ h3,
   color: var(--text);
 }
 
-#topbar .brand img {
+body.xp #topbar .brand img {
   image-rendering: pixelated;
 }
 
-.topnav {
+body.xp .topnav {
   display: flex;
   gap: 4px;
 }
 
-.navtab {
+body.xp .navtab {
   border: 8px solid transparent;
   background: none;
   padding: 1px 8px 3px;
@@ -1611,78 +1612,78 @@ h3,
   image-rendering: pixelated;
 }
 
-.navtab:hover {
+body.xp .navtab:hover {
   color: var(--text);
 }
 
-.navtab.active {
+body.xp .navtab.active {
   border-image: url("/ui/tab-active.png") 4 fill / 8px stretch;
   color: var(--text);
 }
 
-#top-right {
+body.xp #top-right {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-#top-right .account {
+body.xp #top-right .account {
   flex: none;
   font-family: var(--pixel);
   font-size: 14px;
 }
 
-.head {
+body.xp .head {
   display: inline-block;
   image-rendering: pixelated;
   outline: 2px solid var(--outline);
 }
 
-.head.blank {
+body.xp .head.blank {
   background: var(--surface-2);
 }
 
 /* ---------- views ---------- */
 
-.view {
+body.xp .view {
   flex: 1;
   min-height: 0;
 }
 
-#app {
+body.xp #app {
   height: auto;
 }
 
-body.v-home #app,
-body:not(.v-home) #home {
+body.xp.v-home #app,
+body.xp:not(.v-home) #home {
   display: none;
 }
 
-#statusbar {
+body.xp #statusbar {
   left: 0;
 }
 
-body:not(.v-home) #statusbar {
+body.xp:not(.v-home) #statusbar {
   left: 260px;
 }
 
 /* ---------- home ---------- */
 
-#home {
+body.xp #home {
   position: relative;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.scene {
+body.xp .scene {
   position: absolute;
   inset: 0;
   background: var(--scene);
 }
 
-.stage {
+body.xp .stage {
   position: relative;
   flex: 1;
   min-height: 0;
@@ -1694,21 +1695,21 @@ body:not(.v-home) #statusbar {
   padding-top: 12px;
 }
 
-.player {
+body.xp .player {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-#skin {
+body.xp #skin {
   cursor: grab;
 }
 
-#skin:active {
+body.xp #skin:active {
   cursor: grabbing;
 }
 
-.nameplate {
+body.xp .nameplate {
   border: 0;
   padding: 3px 8px 5px;
   background: rgba(0, 0, 0, 0.45);
@@ -1717,17 +1718,17 @@ body:not(.v-home) #statusbar {
   line-height: 18px;
 }
 
-.nameplate:hover {
+body.xp .nameplate:hover {
   background: rgba(0, 0, 0, 0.6);
 }
 
-#home-play {
+body.xp #home-play {
   display: flex;
   align-items: stretch;
   gap: 6px;
 }
 
-.btn.big {
+body.xp .btn.big {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1735,16 +1736,16 @@ body:not(.v-home) #statusbar {
   padding: 6px 28px 8px;
 }
 
-.btn.big:active:not(:disabled) {
+body.xp .btn.big:active:not(:disabled) {
   padding: 7px 28px 7px;
 }
 
-.play-main {
+body.xp .play-main {
   font-size: 22px;
   line-height: 26px;
 }
 
-.play-sub {
+body.xp .play-sub {
   font-size: 12px;
   line-height: 16px;
   opacity: 0.85;
@@ -1754,41 +1755,41 @@ body:not(.v-home) #statusbar {
   white-space: nowrap;
 }
 
-.btn.big-square {
+body.xp .btn.big-square {
   padding: 0 14px;
 }
 
-#home-recent {
+body.xp #home-recent {
   position: relative;
   padding: 0 20px 18px;
 }
 
-.recent {
+body.xp .recent {
   border: 8px solid transparent;
   border-image: url("/ui/panel.png") 4 fill / 8px stretch;
   image-rendering: pixelated;
   padding: 6px 8px 8px;
 }
 
-.recent-head {
+body.xp .recent-head {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 8px;
 }
 
-.recent-title {
+body.xp .recent-title {
   font-size: 15px;
   color: var(--text);
 }
 
-.recent-grid {
+body.xp .recent-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
-.icard {
+body.xp .icard {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1801,43 +1802,43 @@ body:not(.v-home) #statusbar {
   text-align: left;
 }
 
-.icard:hover {
+body.xp .icard:hover {
   border-image-source: url("/ui/card-hover.png");
 }
 
-.icard.active {
+body.xp .icard.active {
   border-image-source: url("/ui/card-active.png");
 }
 
-.icard .inst-name {
+body.xp .icard .inst-name {
   font-weight: 600;
 }
 
-.pick-list {
+body.xp .pick-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
 @media (max-width: 980px) {
-  .recent-grid {
+  body.xp .recent-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-.play-main {
+body.xp .play-main {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
-.pix-icon {
+body.xp .pix-icon {
   filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.35));
 }
 
 /* square off what's left of the old rounded look */
 
-.seg {
+body.xp .seg {
   border: 6px solid transparent;
   border-radius: 0;
   border-image: url("/ui/input.png") 4 fill / 6px stretch;
@@ -1847,39 +1848,57 @@ body:not(.v-home) #statusbar {
   gap: 2px;
 }
 
-.seg button {
+body.xp .seg button {
   border-radius: 0;
   border: 6px solid transparent;
   padding: 1px 6px 3px;
   image-rendering: pixelated;
 }
 
-.seg button.on {
+body.xp .seg button.on {
   background: none;
   border-image: url("/ui/button.png") 4 fill / 6px stretch;
 }
 
-.mod-list,
-.project-list {
+body.xp .mod-list,
+body.xp .project-list {
   border-radius: 0;
   border: 2px solid var(--outline);
 }
 
-.inst,
-.account,
-.chip,
-.count,
-.badge,
-.toast,
-.icon-btn {
+body.xp .inst,
+body.xp .account,
+body.xp .chip,
+body.xp .count,
+body.xp .badge,
+body.xp .toast,
+body.xp .icon-btn {
   border-radius: 0;
 }
 
-.inst.active {
+body.xp .inst.active {
   box-shadow: inset 3px 0 0 var(--grass);
 }
 
-.toast {
+body.xp .toast {
   border: 2px solid var(--outline);
   border-left: 4px solid var(--grass);
+}
+
+/* Which chrome each layout shows: the classic sidebar header and footer, or
+   the new look's top bar and home screen. */
+body:not(.xp) #topbar,
+body:not(.xp) #home,
+body.xp #sidebar .brand,
+body.xp #side-foot {
+  display: none;
+}
+
+.head {
+  image-rendering: pixelated;
+}
+
+.head.blank {
+  display: inline-block;
+  background: var(--surface-2);
 }

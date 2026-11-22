@@ -111,6 +111,8 @@ const IRIS_ID = "YL57xq9U";
 // ---------- state ----------
 
 const S = {
+  /** The new look is on (experimental). */
+  xp: false,
   view: "home" as View,
   instances: [] as Instance[],
   selected: null as string | null,
@@ -297,9 +299,21 @@ function renderSidebar() {
         )
         .join("")
     : `<p class="side-empty">No instances yet.</p>`;
+
+  // Classic layout: account and settings at the bottom of the sidebar.
+  const acc = selectedAccount();
+  $("#side-foot").innerHTML = `
+    ${
+      acc
+        ? `<button class="account" data-action="accounts">${headImg(acc, 24)}<span>${esc(acc.name)}</span></button>`
+        : `<button class="account signin" data-action="login">Sign in with Microsoft</button>`
+    }
+    <button class="icon-btn" data-action="settings" title="Settings" aria-label="Settings">${GEAR_ICON}</button>`;
 }
 
 // ---------- top bar & home ----------
+
+const GEAR_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>`;
 
 const selectedAccount = () => S.accounts.find((a) => a.selected) ?? S.accounts[0] ?? null;
 
@@ -321,7 +335,7 @@ function renderTopbar() {
         : `<button class="btn" data-action="login">Sign in</button>`
     }
     <button class="btn square" data-action="settings" title="Settings" aria-label="Settings">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      ${GEAR_ICON}
     </button>`;
 }
 
@@ -329,16 +343,32 @@ function renderTopbar() {
 async function refreshPlayer() {
   const acc = selectedAccount();
   await showAccount(acc?.id ?? null);
+  renderSidebar();
   renderTopbar();
   renderHome();
 }
 
 function setView(v: View) {
   S.view = v;
-  document.body.classList.toggle("v-home", v === "home");
-  pausePlayer(v !== "home");
+  const home = S.xp && v === "home";
+  document.body.classList.toggle("v-home", home);
+  pausePlayer(!home);
   renderTopbar();
   renderHome();
+}
+
+let playerReady = false;
+
+/** Switch between the classic layout and the new look (Settings → Look). */
+function applyLook(xp: boolean) {
+  S.xp = xp;
+  document.body.classList.toggle("xp", xp);
+  if (xp && !playerReady) {
+    initPlayer($<HTMLCanvasElement>("#skin"));
+    playerReady = true;
+    refreshPlayer();
+  }
+  setView(xp ? "home" : "instances");
 }
 
 const RECENT_LIMIT = 6;
@@ -361,7 +391,7 @@ function instCard(i: Instance, action: string): string {
 }
 
 function renderHome() {
-  if (S.view !== "home") return;
+  if (!S.xp || S.view !== "home") return;
   const acc = selectedAccount();
   $("#player-label").innerHTML = acc
     ? `<button class="nameplate" data-action="accounts">${esc(acc.name)}</button>`
@@ -1148,6 +1178,13 @@ async function settingsModal() {
       </label>
     </section>
     <section class="settings-sec">
+      <h3>Look</h3>
+      <label class="live-opt">
+        <span class="switch"><input type="checkbox" id="set-xp" ${cfg.experimental_ui ? "checked" : ""}/><span></span></span>
+        <span><strong>New look <span class="badge live">Experimental</span></strong><span class="muted small">A home screen with your player and your recently played instances, and a pixel style. It's still being worked on, so some things may look unfinished.</span></span>
+      </label>
+    </section>
+    <section class="settings-sec">
       <h3>Updates</h3>
       <p class="muted small">MioCraft ${esc(version ?? status.version)}. It checks GitHub for a new version when it starts and asks before installing.</p>
       <p><button class="btn small" data-action="check-update" ${inTauri ? "" : "disabled"}>Check for updates</button></p>
@@ -1161,6 +1198,7 @@ async function settingsModal() {
       <span><button class="btn ghost" data-action="close-modal">Close</button> <button class="btn primary" id="set-save">Save</button></span>
     </div>`);
   $("#set-save").addEventListener("click", async () => {
+    const xp = $<HTMLInputElement>("#set-xp").checked;
     try {
       await api("PATCH", "/config", {
         ms_client_id: $<HTMLInputElement>("#set-cid").value,
@@ -1168,8 +1206,10 @@ async function settingsModal() {
         extra_jvm_args: $<HTMLInputElement>("#set-jvm").value.split(/\s+/).filter(Boolean),
         curseforge_api_key: $<HTMLInputElement>("#set-cf").value,
         discord_rpc: $<HTMLInputElement>("#set-discord").checked,
+        experimental_ui: xp,
       });
       closeModal();
+      if (xp !== S.xp) applyLook(xp);
       await loadAccounts();
       S.browse.instance = null;
       if (S.tab === "browse") runSearch(false);
@@ -1828,11 +1868,10 @@ async function lookForUpdate(manual: boolean) {
 (async () => {
   try {
     await connect();
-    initPlayer($<HTMLCanvasElement>("#skin"));
-    setView("home");
+    const cfg = await api("GET", "/config");
+    applyLook(!!cfg.experimental_ui);
     events(onEvent);
     await Promise.all([loadAccounts(), loadInstances()]);
-    const cfg = await api("GET", "/config");
     if (!cfg.onboarded) setupModal(0);
     else lookForUpdate(false);
   } catch (e) {
