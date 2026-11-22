@@ -9,7 +9,7 @@ import { z } from "zod";
 import { call, enc } from "./client.js";
 
 const server = new McpServer(
-  { name: "mio-craft", version: "0.4.1" },
+  { name: "mio-craft", version: "0.5.0" },
   {
     instructions: [
       "Tools for making Minecraft mods with MioCraft.",
