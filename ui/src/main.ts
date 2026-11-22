@@ -1128,13 +1128,17 @@ async function newInstanceModal() {
   loadVersions();
 }
 
-async function settingsModal() {
-  const [cfg, path, cc] = await Promise.all([
-    api("GET", "/config"),
-    mcpServerPath(),
-    api<{ claude_path: string | null; node_path: string | null; connected: boolean }>("GET", "/claude-code").catch(() => null),
-  ]);
-  const ccLine = !cc
+type ClaudeCodeStatus = { claude_path: string | null; node_path: string | null; connected: boolean };
+
+/** The last Claude Code check, shown while Settings checks again (undefined = never checked). */
+let lastCc: ClaudeCodeStatus | null | undefined;
+
+function manualLine(cc: ClaudeCodeStatus | null): string {
+  return `<p class="muted small">${cc?.connected ? "To connect it manually, run this in a terminal:" : "Or run this once in a terminal:"}</p>`;
+}
+
+function claudeCodeLine(cc: ClaudeCodeStatus | null): string {
+  return !cc
     ? ""
     : cc.connected
       ? '<p class="ok-line">✓ Connected. Claude Code can use the launcher.</p>'
@@ -1143,17 +1147,26 @@ async function settingsModal() {
         : !cc.node_path
           ? `<p class="muted small">The launcher's MCP server needs Node.js. <button class="link" data-action="open-url" data-url="https://nodejs.org/">Install Node.js LTS</button>, then reopen Settings.</p>`
           : `<p><button class="btn primary small" data-action="connect-claude" ${inTauri ? "" : "disabled"}>Connect automatically</button></p>`;
-  const status = await api("GET", "/status");
-  const version = await appVersion().catch(() => null);
+}
+
+async function settingsModal() {
+  // Checking Claude Code takes a few seconds, so the dialog opens without it
+  // and the line is filled in when the check is done.
+  const ccCheck = api<ClaudeCodeStatus>("GET", "/claude-code").catch(() => null);
+  const [cfg, path, status, version] = await Promise.all([
+    api("GET", "/config"),
+    mcpServerPath(),
+    api("GET", "/status"),
+    appVersion().catch(() => null),
+  ]);
   const cmd = `claude mcp add --scope user mio-craft -- node "${path}"`;
   openModal(`
     <h2>Settings</h2>
     <section class="settings-sec">
       <h3>✦ Connect Claude Code</h3>
-      ${ccLine}
-      <p class="muted small">${cc?.connected ? "To connect it manually, run" : "Or run this once in a terminal"}. MioCraft needs to be open while Claude Code uses it.</p>
+      <div id="cc-line">${lastCc === undefined ? `<p class="muted small">Checking for Claude Code…</p>${manualLine(null)}` : claudeCodeLine(lastCc) + manualLine(lastCc)}</div>
       <div class="copy"><code id="mcp-cmd">${esc(cmd)}</code><button class="btn small" data-copy="${esc(cmd)}">Copy</button></div>
-      <p class="muted small">Then ask Claude Code something like "make a Fabric mod for my instance that adds a ruby ore".</p>
+      <p class="muted small">Then ask Claude Code something like "make a Fabric mod for my instance that adds a ruby ore". MioCraft needs to be open while Claude Code uses it.</p>
     </section>
     <section class="settings-sec">
       <h3>Microsoft sign-in</h3>
@@ -1197,6 +1210,12 @@ async function settingsModal() {
       <button class="btn ghost" data-action="run-setup">Run setup again</button>
       <span><button class="btn ghost" data-action="close-modal">Close</button> <button class="btn primary" id="set-save">Save</button></span>
     </div>`);
+  ccCheck.then((cc) => {
+    lastCc = cc;
+    // The dialog may have been closed (or replaced) by now.
+    const line = document.querySelector("#cc-line");
+    if (line) line.innerHTML = claudeCodeLine(cc) + manualLine(cc);
+  });
   $("#set-save").addEventListener("click", async () => {
     const xp = $<HTMLInputElement>("#set-xp").checked;
     try {
