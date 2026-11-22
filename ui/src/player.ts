@@ -169,6 +169,17 @@ const head = { yaw: 0, pitch: 0 };
 let label: HTMLElement | null = null;
 const headPos = new Vector3();
 
+/** How far the seated player leans back, in radians (negative tips the top away from the camera). */
+const LEAN = -0.26;
+/** Where the hips are in the skin model: the point the upper body leans around. */
+const HIPS_Y = -12;
+
+/** A point on the model's centre line at height `y`, turned by `angle` about the hips. Returns [x, y, z]. */
+function aboutHips(y: number, angle: number): [number, number, number] {
+  const d = y - HIPS_Y;
+  return [0, HIPS_Y + d * Math.cos(angle), d * Math.sin(angle)];
+}
+
 function pose(player: PlayerObject, t: number, delta: number) {
   const s = player.skin;
   const breath = Math.sin(t * 1.6);
@@ -177,17 +188,30 @@ function pose(player: PlayerObject, t: number, delta: number) {
     // Legs forward over the table's edge, swinging a little.
     s.rightLeg.rotation.set(-1.45 + Math.sin(t * 1.1) * 0.07, 0, 0);
     s.leftLeg.rotation.set(-1.45 + Math.sin(t * 1.1 + 2.2) * 0.07, 0, 0);
-    // Hands resting on the knees, angled out a little, rising and falling with the breath.
-    s.rightArm.rotation.set(-0.55 + breath * 0.025, 0, -0.16);
-    s.leftArm.rotation.set(-0.55 + breath * 0.025, 0, 0.16);
-    s.body.rotation.x = 0.04 + breath * 0.012;
+    // Leaning back a little from the hips, rocking slightly with the breath.
+    const lean = LEAN + breath * 0.012;
+    const [, by, bz] = aboutHips(-6, lean);
+    s.body.position.set(0, by, bz);
+    s.body.rotation.x = lean;
+    const [, hy, hz] = aboutHips(0, lean);
+    s.head.position.set(0, hy, hz);
+    // Arms straight down and back, hands on the table behind, a little out to the sides.
+    const [, sy, sz] = aboutHips(-2, lean);
+    s.rightArm.position.set(-5, sy, sz);
+    s.leftArm.position.set(5, sy, sz);
+    s.rightArm.rotation.set(0.27, 0, -0.08);
+    s.leftArm.rotation.set(0.27, 0, 0.08);
   } else {
     // Standing still, arms swaying gently with the breath.
     s.rightLeg.rotation.set(0, 0, 0);
     s.leftLeg.rotation.set(0, 0, 0);
+    s.head.position.set(0, 0, 0);
+    s.body.position.set(0, -6, 0);
+    s.body.rotation.x = 0;
+    s.rightArm.position.set(-5, -2, 0);
+    s.leftArm.position.set(5, -2, 0);
     s.rightArm.rotation.set(0, 0, 0.05 + breath * 0.03);
     s.leftArm.rotation.set(0, 0, -0.05 - breath * 0.03);
-    s.body.rotation.x = 0;
   }
 
   // Look towards the cursor, eased and limited to a natural range.
