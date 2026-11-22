@@ -21,6 +21,8 @@ pub struct Config {
     pub discord_rpc: bool,
     /// Use the new look (home screen with the player, pixel style). Experimental.
     pub experimental_ui: bool,
+    /// Use the original green and grey colours instead of the copper theme.
+    pub legacy_colors: bool,
 }
 
 impl Default for Config {
@@ -34,6 +36,7 @@ impl Default for Config {
             onboarded: false,
             discord_rpc: false,
             experimental_ui: false,
+            legacy_colors: false,
         }
     }
 }
@@ -62,6 +65,7 @@ pub struct ConfigPatch {
     pub onboarded: Option<bool>,
     pub discord_rpc: Option<bool>,
     pub experimental_ui: Option<bool>,
+    pub legacy_colors: Option<bool>,
 }
 
 impl Config {
@@ -91,6 +95,9 @@ impl Config {
         }
         if let Some(v) = p.experimental_ui {
             self.experimental_ui = v;
+        }
+        if let Some(v) = p.legacy_colors {
+            self.legacy_colors = v;
         }
     }
 }

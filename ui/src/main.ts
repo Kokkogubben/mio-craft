@@ -361,6 +361,21 @@ function setView(v: View) {
 
 let playerReady = false;
 
+const LEGACY_KEY = "miocraft.legacyColors";
+
+/** Switch between the copper colours and the original ones (Settings → Look → Legacy colors). */
+function applyColors(legacy: boolean) {
+  document.body.classList.toggle("legacy", legacy);
+  // Remembered here too, so the next start paints the right colours before the config has loaded.
+  try {
+    localStorage.setItem(LEGACY_KEY, legacy ? "1" : "0");
+  } catch {}
+}
+
+try {
+  if (localStorage.getItem(LEGACY_KEY) === "1") document.body.classList.add("legacy");
+} catch {}
+
 /** Switch between the classic layout and the new look (Settings → Look). */
 function applyLook(xp: boolean) {
   S.xp = xp;
@@ -460,7 +475,7 @@ function renderMain() {
   if (!inst) {
     main.innerHTML = `
       <div class="empty">
-        <img src="/icon.png" alt="" width="72" height="72"/>
+        <img src="/icon.png" alt="" width="64" height="64"/>
         <h1>Make your first instance</h1>
         <p>Pick a Minecraft version and a mod loader. Then ask Claude Code to make a mod for it, and it'll show up here.</p>
         <button class="btn primary" data-action="new-instance">New instance</button>
@@ -1263,6 +1278,10 @@ function renderSettings(cfg: any, info: { path: string; version: string | null; 
         <span class="switch"><input type="checkbox" id="set-xp" ${cfg.experimental_ui ? "checked" : ""}/><span></span></span>
         <span><strong>New look <span class="badge live">Experimental</span></strong><span class="muted small">A home screen with your player and your recently played instances, and a pixel style. It's still being worked on, so some things may look unfinished.</span></span>
       </label>
+      <label class="live-opt">
+        <span class="switch"><input type="checkbox" id="set-legacy" ${cfg.legacy_colors ? "checked" : ""}/><span></span></span>
+        <span><strong>Legacy colors</strong><span class="muted small">Use MioCraft's original green and grey instead of the copper colors.</span></span>
+      </label>
     </section>
     <section class="settings-sec">
       <h3>Updates</h3>
@@ -1279,6 +1298,7 @@ function renderSettings(cfg: any, info: { path: string; version: string | null; 
     </div>`);
   $("#set-save").addEventListener("click", async () => {
     const xp = $<HTMLInputElement>("#set-xp").checked;
+    const legacy = $<HTMLInputElement>("#set-legacy").checked;
     try {
       S.cfg = await api("PATCH", "/config", {
         ms_client_id: $<HTMLInputElement>("#set-cid").value,
@@ -1287,8 +1307,10 @@ function renderSettings(cfg: any, info: { path: string; version: string | null; 
         curseforge_api_key: $<HTMLInputElement>("#set-cf").value,
         discord_rpc: $<HTMLInputElement>("#set-discord").checked,
         experimental_ui: xp,
+        legacy_colors: legacy,
       });
       closeModal();
+      applyColors(legacy);
       if (xp !== S.xp) applyLook(xp);
       await loadAccounts();
       S.browse.instance = null;
@@ -1951,6 +1973,7 @@ async function lookForUpdate(manual: boolean) {
     await connect();
     const cfg = await api("GET", "/config");
     S.cfg = cfg;
+    applyColors(!!cfg.legacy_colors);
     applyLook(!!cfg.experimental_ui);
     events(onEvent);
     await Promise.all([loadAccounts(), loadInstances()]);

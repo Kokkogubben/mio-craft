@@ -1,13 +1,29 @@
+/* Colours. The default is the copper theme (from the logo: copper with an
+   oxidised green M). body.legacy brings back the original green and grey,
+   the "Legacy colors" switch in Settings. */
 :root {
-  --bg: #141518;
-  --side: #1a1b1f;
-  --surface: #202227;
-  --surface-2: #272a30;
-  --border: #2e3138;
-  --text: #ebe9e5;
-  --muted: #9b9da4;
-  --grass: #6abe50;
-  --grass-dark: #4f9a3a;
+  --bg: #161210;
+  --side: #1c1714;
+  --surface: #231d1a;
+  --surface-2: #2b2420;
+  --border: #3b302a;
+  --deep: #0f0c0b; /* code blocks, logs */
+  --field: #1a1513; /* text fields */
+  --track: #45382f; /* switch track */
+  --text: #efe6e0;
+  --muted: #a6978d;
+  --muted-2: #95867c;
+  --faint: #7a6c63;
+  --dim: #64574f;
+  --code: #d8ccc4;
+  /* main accent: buttons, tabs, focus */
+  --accent: #d67b5b;
+  --accent-dark: #b26247;
+  --accent-ink: #2a1208; /* text on --accent */
+  --accent-rgb: 214, 123, 91;
+  /* success and "live" states */
+  --ok: #5fb896;
+  --ok-rgb: 95, 184, 150;
   --claude: #e8824f;
   --claude-bg: rgba(232, 130, 79, 0.12);
   --danger: #e5534b;
@@ -17,6 +33,29 @@
   --radius: 10px;
   --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   color-scheme: dark;
+}
+
+body.legacy {
+  --bg: #141518;
+  --side: #1a1b1f;
+  --surface: #202227;
+  --surface-2: #272a30;
+  --border: #2e3138;
+  --deep: var(--deep);
+  --field: var(--field);
+  --track: var(--track);
+  --text: #ebe9e5;
+  --muted: #9b9da4;
+  --muted-2: var(--muted-2);
+  --faint: var(--faint);
+  --dim: var(--dim);
+  --code: var(--code);
+  --accent: #6abe50;
+  --accent-dark: #4f9a3a;
+  --accent-ink: var(--accent-ink);
+  --accent-rgb: 106, 190, 80;
+  --ok: #6abe50;
+  --ok-rgb: 106, 190, 80;
 }
 
 * {
@@ -75,6 +114,11 @@ button {
   letter-spacing: 0.01em;
 }
 
+/* The logo is pixel art: keep its pixels sharp at every size. */
+img[src="/icon.png"] {
+  image-rendering: pixelated;
+}
+
 .side-head {
   display: flex;
   align-items: center;
@@ -127,8 +171,8 @@ button {
   place-items: center;
   font-weight: 700;
   font-size: 13px;
-  color: #141518;
-  background: var(--grass);
+  color: var(--accent-ink);
+  background: var(--accent);
 }
 
 .inst-icon.fabric {
@@ -162,8 +206,8 @@ button {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--grass);
-  box-shadow: 0 0 0 3px rgba(106, 190, 80, 0.2);
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(var(--ok-rgb), 0.2);
 }
 
 #side-foot {
@@ -281,7 +325,7 @@ button {
 
 .tab.active {
   color: var(--text);
-  border-bottom-color: var(--grass);
+  border-bottom-color: var(--accent);
 }
 
 .count {
@@ -378,7 +422,7 @@ button {
 }
 
 .mod-file {
-  color: #6f727a;
+  color: var(--faint);
   font-size: 12px;
   margin-top: 2px;
   font-family: var(--mono);
@@ -405,8 +449,8 @@ button {
 }
 
 .badge.ok {
-  background: rgba(106, 190, 80, 0.14);
-  color: var(--grass);
+  background: rgba(var(--ok-rgb), 0.14);
+  color: var(--ok);
 }
 
 .badge.fail {
@@ -426,7 +470,7 @@ button {
   padding: 0;
   border: 0;
   background: none;
-  color: #8f93a0;
+  color: var(--muted-2);
   font: 12px var(--mono);
   text-align: left;
   overflow: hidden;
@@ -460,7 +504,7 @@ button {
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: #3a3d45;
+  background: var(--track);
   transition: background 0.15s;
 }
 
@@ -477,7 +521,7 @@ button {
 }
 
 .switch input:checked + span {
-  background: var(--grass-dark);
+  background: var(--accent-dark);
 }
 
 .switch input:checked + span::after {
@@ -485,7 +529,7 @@ button {
 }
 
 .switch input:focus-visible + span {
-  outline: 2px solid var(--grass);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -569,7 +613,7 @@ button {
   flex: 1;
   margin: 0;
   min-height: 300px;
-  background: #0e0f11;
+  background: var(--deep);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 12px 14px;
@@ -577,7 +621,7 @@ button {
   font: 12px/1.55 var(--mono);
   white-space: pre-wrap;
   word-break: break-word;
-  color: #c9cbd1;
+  color: var(--code);
 }
 
 .ln.err {
@@ -591,7 +635,7 @@ button {
 .src {
   display: inline-block;
   width: 46px;
-  color: #5c606a;
+  color: var(--dim);
 }
 
 /* ---------- controls ---------- */
@@ -625,17 +669,17 @@ button {
 }
 
 .btn.primary {
-  background: var(--grass-dark);
+  background: var(--accent-dark);
   color: #fff;
 }
 
 .btn.play {
-  background: var(--grass);
-  color: #10200b;
+  background: var(--accent);
+  color: var(--accent-ink);
   padding: 10px 28px;
   font-size: 15px;
   font-weight: 700;
-  box-shadow: 0 2px 0 var(--grass-dark);
+  box-shadow: 0 2px 0 var(--accent-dark);
 }
 
 .btn.danger {
@@ -673,7 +717,7 @@ button {
 
 .input {
   width: 100%;
-  background: #17181c;
+  background: var(--field);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
@@ -683,7 +727,7 @@ button {
 
 .input:focus {
   outline: none;
-  border-color: var(--grass-dark);
+  border-color: var(--accent-dark);
 }
 
 .input.mono {
@@ -696,7 +740,7 @@ select.input {
 }
 
 :focus-visible {
-  outline: 2px solid var(--grass);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -766,7 +810,7 @@ select.input {
 
 .seg {
   display: flex;
-  background: #17181c;
+  background: var(--field);
   border: 1px solid var(--border);
   border-radius: 9px;
   padding: 3px;
@@ -835,7 +879,7 @@ select.input {
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  background: #0e0f11;
+  background: var(--deep);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
@@ -854,7 +898,7 @@ select.input {
   text-align: center;
   padding: 16px;
   margin: 14px 0;
-  background: #0e0f11;
+  background: var(--deep);
   border-radius: 10px;
   border: 1px dashed var(--border);
 }
@@ -936,7 +980,7 @@ select.input {
 
 .bar div {
   height: 100%;
-  background: var(--grass);
+  background: var(--accent);
   transition: width 0.2s;
 }
 
@@ -954,7 +998,7 @@ select.input {
 .toast {
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--grass);
+  border-left: 3px solid var(--ok);
   padding: 10px 14px;
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -1119,8 +1163,8 @@ button.badge {
 }
 
 .btn.small.update {
-  background: rgba(106, 190, 80, 0.16);
-  color: var(--grass);
+  background: rgba(var(--ok-rgb), 0.16);
+  color: var(--ok);
 }
 
 .export-sum {
@@ -1183,7 +1227,7 @@ button.badge {
 }
 
 .ok-line {
-  color: var(--grass);
+  color: var(--ok);
   margin: 0 0 8px;
   font-weight: 550;
 }
@@ -1254,11 +1298,11 @@ textarea.input {
 }
 
 .dot-step.done {
-  background: var(--grass-dark);
+  background: var(--accent-dark);
 }
 
 .dot-step.on {
-  background: var(--grass);
+  background: var(--accent);
   width: 20px;
   border-radius: 999px;
 }
@@ -1300,7 +1344,7 @@ textarea.input {
 }
 
 .checklist li.ok > span:first-child {
-  color: var(--grass);
+  color: var(--ok);
 }
 
 .steps {
@@ -1336,7 +1380,7 @@ textarea.input {
 }
 
 .choice:hover {
-  border-color: var(--grass-dark);
+  border-color: var(--accent-dark);
 }
 
 button.link.muted {
@@ -1401,8 +1445,9 @@ button.link.muted {
 /* =====================================================================
    Pixel theme: framed 9-slice buttons and panels (ui/public/ui/*.png),
    the Monocraft font for headings and controls, a top bar and the home
-   screen. Colours stay the app's grays and grass green. Everything here
-   applies only with body.xp, the "New look" switch in Settings.
+   screen. The frames come in the copper theme's colours, with the legacy
+   set in ui/public/ui/legacy/. Everything here applies only with body.xp,
+   the "New look" switch in Settings.
    ===================================================================== */
 
 @font-face {
@@ -1412,9 +1457,46 @@ button.link.muted {
 }
 
 body.xp {
+  --ui-button: url("/ui/button.png");
+  --ui-button-hover: url("/ui/button-hover.png");
+  --ui-button-down: url("/ui/button-down.png");
+  --ui-play: url("/ui/play.png");
+  --ui-play-hover: url("/ui/play-hover.png");
+  --ui-play-down: url("/ui/play-down.png");
+  --ui-danger: url("/ui/danger.png");
+  --ui-danger-hover: url("/ui/danger-hover.png");
+  --ui-danger-down: url("/ui/danger-down.png");
+  --ui-input: url("/ui/input.png");
+  --ui-panel: url("/ui/panel.png");
+  --ui-tab-active: url("/ui/tab-active.png");
+  --ui-card: url("/ui/card.png");
+  --ui-card-hover: url("/ui/card-hover.png");
+  --ui-card-active: url("/ui/card-active.png");
+}
+
+body.xp.legacy {
+  --ui-button: url("/ui/legacy/button.png");
+  --ui-button-hover: url("/ui/legacy/button-hover.png");
+  --ui-button-down: url("/ui/legacy/button-down.png");
+  --ui-play: url("/ui/legacy/play.png");
+  --ui-play-hover: url("/ui/legacy/play-hover.png");
+  --ui-play-down: url("/ui/legacy/play-down.png");
+  --ui-danger: url("/ui/legacy/danger.png");
+  --ui-danger-hover: url("/ui/legacy/danger-hover.png");
+  --ui-danger-down: url("/ui/legacy/danger-down.png");
+  --ui-input: url("/ui/legacy/input.png");
+  --ui-panel: url("/ui/legacy/panel.png");
+  --ui-tab-active: url("/ui/legacy/tab-active.png");
+  --ui-card: url("/ui/legacy/card.png");
+  --ui-card-hover: url("/ui/legacy/card-hover.png");
+  --ui-card-active: url("/ui/legacy/card-active.png");
+  --scene: #1e2620;
+}
+
+body.xp {
   --pixel: "Monocraft", var(--mono);
   /* placeholder for the home scene until the artwork exists */
-  --scene: #1e2620;
+  --scene: #241b17;
   --outline: #0b0c0e;
   --radius: 0;
 }
@@ -1446,7 +1528,7 @@ body.xp .modal h2 {
 body.xp .btn {
   border: 8px solid transparent;
   border-radius: 0;
-  border-image: url("/ui/button.png") 4 fill / 8px stretch;
+  border-image: var(--ui-button) 4 fill / 8px stretch;
   image-rendering: pixelated;
   background: none;
   padding: 1px 8px 3px;
@@ -1459,11 +1541,11 @@ body.xp .btn {
 
 body.xp .btn:hover:not(:disabled) {
   filter: none;
-  border-image-source: url("/ui/button-hover.png");
+  border-image-source: var(--ui-button-hover);
 }
 
 body.xp .btn:active:not(:disabled) {
-  border-image-source: url("/ui/button-down.png");
+  border-image-source: var(--ui-button-down);
   padding: 2px 8px 2px;
 }
 
@@ -1488,19 +1570,19 @@ body.xp .btn.ghost {
 
 body.xp .btn.primary,
 body.xp .btn.play {
-  border-image-source: url("/ui/play.png");
+  border-image-source: var(--ui-play);
   color: #fff;
   box-shadow: none;
 }
 
 body.xp .btn.primary:hover:not(:disabled),
 body.xp .btn.play:hover:not(:disabled) {
-  border-image-source: url("/ui/play-hover.png");
+  border-image-source: var(--ui-play-hover);
 }
 
 body.xp .btn.primary:active:not(:disabled),
 body.xp .btn.play:active:not(:disabled) {
-  border-image-source: url("/ui/play-down.png");
+  border-image-source: var(--ui-play-down);
 }
 
 body.xp .btn.play,
@@ -1511,21 +1593,21 @@ body.xp .btn.danger {
 }
 
 body.xp .btn.danger {
-  border-image-source: url("/ui/danger.png");
+  border-image-source: var(--ui-danger);
   background: none;
   color: #fff;
 }
 
 body.xp .btn.danger:hover:not(:disabled) {
-  border-image-source: url("/ui/danger-hover.png");
+  border-image-source: var(--ui-danger-hover);
 }
 
 body.xp .btn.danger:active:not(:disabled) {
-  border-image-source: url("/ui/danger-down.png");
+  border-image-source: var(--ui-danger-down);
 }
 
 body.xp .btn.danger.ghost {
-  border-image-source: url("/ui/button.png");
+  border-image-source: var(--ui-button);
   background: none;
   color: #ff8c84;
   padding: 1px 8px 3px;
@@ -1541,7 +1623,7 @@ body.xp .btn.square {
 body.xp .input {
   border: 6px solid transparent;
   border-radius: 0;
-  border-image: url("/ui/input.png") 4 fill / 6px stretch;
+  border-image: var(--ui-input) 4 fill / 6px stretch;
   image-rendering: pixelated;
   background: none;
   padding: 2px 4px;
@@ -1549,14 +1631,14 @@ body.xp .input {
 
 body.xp .input:focus {
   border-color: transparent;
-  outline: 2px solid var(--grass-dark);
+  outline: 2px solid var(--accent-dark);
   outline-offset: 0;
 }
 
 body.xp .modal {
   border: 8px solid transparent;
   border-radius: 0;
-  border-image: url("/ui/panel.png") 4 fill / 8px stretch;
+  border-image: var(--ui-panel) 4 fill / 8px stretch;
   image-rendering: pixelated;
   background: none;
   padding: 16px 18px;
@@ -1593,10 +1675,6 @@ body.xp #topbar .brand {
   color: var(--text);
 }
 
-body.xp #topbar .brand img {
-  image-rendering: pixelated;
-}
-
 body.xp .topnav {
   display: flex;
   gap: 4px;
@@ -1617,7 +1695,7 @@ body.xp .navtab:hover {
 }
 
 body.xp .navtab.active {
-  border-image: url("/ui/tab-active.png") 4 fill / 8px stretch;
+  border-image: var(--ui-tab-active) 4 fill / 8px stretch;
   color: var(--text);
 }
 
@@ -1766,7 +1844,7 @@ body.xp #home-recent {
 
 body.xp .recent {
   border: 8px solid transparent;
-  border-image: url("/ui/panel.png") 4 fill / 8px stretch;
+  border-image: var(--ui-panel) 4 fill / 8px stretch;
   image-rendering: pixelated;
   padding: 6px 8px 8px;
 }
@@ -1795,7 +1873,7 @@ body.xp .icard {
   gap: 10px;
   min-width: 0;
   border: 8px solid transparent;
-  border-image: url("/ui/card.png") 4 fill / 8px stretch;
+  border-image: var(--ui-card) 4 fill / 8px stretch;
   image-rendering: pixelated;
   background: none;
   padding: 2px 4px;
@@ -1803,11 +1881,11 @@ body.xp .icard {
 }
 
 body.xp .icard:hover {
-  border-image-source: url("/ui/card-hover.png");
+  border-image-source: var(--ui-card-hover);
 }
 
 body.xp .icard.active {
-  border-image-source: url("/ui/card-active.png");
+  border-image-source: var(--ui-card-active);
 }
 
 body.xp .icard .inst-name {
@@ -1841,7 +1919,7 @@ body.xp .pix-icon {
 body.xp .seg {
   border: 6px solid transparent;
   border-radius: 0;
-  border-image: url("/ui/input.png") 4 fill / 6px stretch;
+  border-image: var(--ui-input) 4 fill / 6px stretch;
   image-rendering: pixelated;
   background: none;
   padding: 0;
@@ -1857,7 +1935,7 @@ body.xp .seg button {
 
 body.xp .seg button.on {
   background: none;
-  border-image: url("/ui/button.png") 4 fill / 6px stretch;
+  border-image: var(--ui-button) 4 fill / 6px stretch;
 }
 
 body.xp .mod-list,
@@ -1877,12 +1955,12 @@ body.xp .icon-btn {
 }
 
 body.xp .inst.active {
-  box-shadow: inset 3px 0 0 var(--grass);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 body.xp .toast {
   border: 2px solid var(--outline);
-  border-left: 4px solid var(--grass);
+  border-left: 4px solid var(--ok);
 }
 
 /* Which chrome each layout shows: the classic sidebar header and footer, or

@@ -6,11 +6,16 @@ headings.
 
 ## Placeholders in place now
 
-- **UI kit and silhouette:** `design/tools/ui-kit.mjs` generates the frames in `ui/public/ui/` and
-  `ui/public/skin/silhouette.png` in the app's grays and green. Hand-drawn files with the same names
-  and sizes replace them; don't rerun the script after that, or it overwrites them.
+- **UI kit and silhouette:** `design/tools/ui-kit.mjs` generates the frames in `ui/public/ui/` (copper
+  theme) and `ui/public/ui/legacy/` (the original grays and green, for "Legacy colors"), plus
+  `ui/public/skin/silhouette.png`. Hand-drawn files with the same names and sizes replace them; don't
+  rerun the script after that, or it overwrites them.
 - **Pixel font:** Monocraft (`ui/public/fonts/Monocraft.ttf`).
-- **Logo:** the current `ui/public/icon.png`.
+- **Logo:** a copper block face with an oxidised green M, 16 × 16 pixel art drawn by
+  `design/tools/logo.mjs`. The script also writes `ui/public/icon.png` and every app icon in
+  `src-tauri/icons/` (scaled with hard pixel edges, so don't use `tauri icon` for it).
+- **Colours:** copper and verdigris from the logo, as variables at the top of `ui/src/style.css`.
+  `body.legacy` holds the original palette.
 - **Scene:** a flat colour, `--scene` in `ui/src/style.css`.
 
 ## Ground rules
@@ -51,9 +56,9 @@ referenced from CSS and TypeScript as `/brand/wordmark.png` and so on.
 | `wordmark.png` | about 96 × 20 | "MioCraft" in pixel letters, shown at 2× in the top bar |
 | `mark.png` | 32 × 32 | the logo on its own, for the loading screen and About |
 
-App icons are generated, not drawn per size: export **`design/logo/icon-1024.png`** (1024 × 1024,
-transparent, with some padding) and run `npx tauri icon design/logo/icon-1024.png`. It writes every
-size into `src-tauri/icons/`.
+App icons are generated, not drawn per size: `node design/tools/logo.mjs` writes every size into
+`src-tauri/icons/` from the 16 × 16 logo. To use a hand-drawn logo instead, change the script to read
+your 16 × 16 PNG rather than drawing one.
 
 ### 2. Home scene — `ui/public/scenes/sunset/`
 

@@ -79,28 +79,62 @@ function frame({ outline, fill, hi, lo, hiW = 1, loW = 2, pressed = false }) {
 }
 
 const O = hex("#0b0c0e");
-const kit = {
-  // neutral buttons (the app's gray surfaces)
-  "button.png": { outline: O, fill: hex("#2a2d34"), hi: hex("#3d414b"), lo: hex("#1b1d21") },
-  "button-hover.png": { outline: O, fill: hex("#343843"), hi: hex("#4b505c"), lo: hex("#212328") },
-  "button-down.png": { outline: O, fill: hex("#24262c"), hi: hex("#3d414b"), lo: hex("#16171b"), pressed: true },
-  // the green Play / primary button (the app's grass green)
-  "play.png": { outline: O, fill: hex("#5aa843"), hi: hex("#82cc67"), lo: hex("#3d7a2c") },
-  "play-hover.png": { outline: O, fill: hex("#67b84f"), hi: hex("#93d978"), lo: hex("#448633") },
-  "play-down.png": { outline: O, fill: hex("#4f9a3a"), hi: hex("#82cc67"), lo: hex("#336a25"), pressed: true },
+/** One set of frames from a theme's colours. */
+const kit = (c) => ({
+  // neutral buttons (the app's surfaces)
+  "button.png": { outline: O, fill: hex(c.btn[0]), hi: hex(c.btn[1]), lo: hex(c.btn[2]) },
+  "button-hover.png": { outline: O, fill: hex(c.btnHover[0]), hi: hex(c.btnHover[1]), lo: hex(c.btnHover[2]) },
+  "button-down.png": { outline: O, fill: hex(c.btnDown[0]), hi: hex(c.btn[1]), lo: hex(c.btnDown[2]), pressed: true },
+  // the Play / primary button (the theme's accent)
+  "play.png": { outline: O, fill: hex(c.play[0]), hi: hex(c.play[1]), lo: hex(c.play[2]) },
+  "play-hover.png": { outline: O, fill: hex(c.playHover[0]), hi: hex(c.playHover[1]), lo: hex(c.playHover[2]) },
+  "play-down.png": { outline: O, fill: hex(c.playDown[0]), hi: hex(c.play[1]), lo: hex(c.playDown[2]), pressed: true },
   // red Stop / destructive button
   "danger.png": { outline: O, fill: hex("#c4463f"), hi: hex("#e0695f"), lo: hex("#8c2e29") },
   "danger-hover.png": { outline: O, fill: hex("#d2514a"), hi: hex("#ec7a70"), lo: hex("#99342e") },
   "danger-down.png": { outline: O, fill: hex("#b33e38"), hi: hex("#e0695f"), lo: hex("#7a2723"), pressed: true },
   // panels, cards and fields
-  "panel.png": { outline: O, fill: hex("#1a1b1f", 240), hi: hex("#2e3138", 240), lo: hex("#111214", 240), loW: 1 },
-  "card.png": { outline: O, fill: hex("#202227"), hi: hex("#30333a"), lo: hex("#16171a") },
-  "card-hover.png": { outline: O, fill: hex("#272a30"), hi: hex("#393c45"), lo: hex("#1a1b1f") },
-  "card-active.png": { outline: hex("#6abe50"), fill: hex("#272a30"), hi: hex("#393c45"), lo: hex("#1a1b1f") },
-  "tab-active.png": { outline: O, fill: hex("#272a30"), hi: hex("#393c45"), lo: hex("#6abe50") },
-  "input.png": { outline: O, fill: hex("#121316"), hi: hex("#2a2d33"), lo: hex("#08090a"), hiW: 1, loW: 1, pressed: true },
+  "panel.png": { outline: O, fill: hex(c.panel[0], 240), hi: hex(c.panel[1], 240), lo: hex(c.panel[2], 240), loW: 1 },
+  "card.png": { outline: O, fill: hex(c.card[0]), hi: hex(c.card[1]), lo: hex(c.card[2]) },
+  "card-hover.png": { outline: O, fill: hex(c.cardHover[0]), hi: hex(c.cardHover[1]), lo: hex(c.cardHover[2]) },
+  "card-active.png": { outline: hex(c.accent), fill: hex(c.cardHover[0]), hi: hex(c.cardHover[1]), lo: hex(c.cardHover[2]) },
+  "tab-active.png": { outline: O, fill: hex(c.cardHover[0]), hi: hex(c.cardHover[1]), lo: hex(c.accent) },
+  "input.png": { outline: O, fill: hex(c.input[0]), hi: hex(c.input[1]), lo: hex(c.input[2]), hiW: 1, loW: 1, pressed: true },
+});
+// [fill, highlight, shadow] for each frame
+const themes = {
+  // copper, from the logo (the default)
+  "": {
+    accent: "#d67b5b",
+    btn: ["#30271f", "#463a31", "#1e1814"],
+    btnHover: ["#3a2f27", "#53453a", "#241d18"],
+    btnDown: ["#29211c", "", "#17120f"],
+    play: ["#c26b4c", "#e3826c", "#904931"],
+    playHover: ["#d67b5b", "#eb9a80", "#9a5038"],
+    playDown: ["#b26247", "", "#7a3e29"],
+    panel: ["#1c1714", "#3b302a", "#120e0c"],
+    card: ["#231d1a", "#352c26", "#181310"],
+    cardHover: ["#2b2420", "#3f342d", "#1c1714"],
+    input: ["#140f0d", "#2e2621", "#090706"],
+  },
+  // the original grays and grass green ("Legacy colors")
+  "legacy/": {
+    accent: "#6abe50",
+    btn: ["#2a2d34", "#3d414b", "#1b1d21"],
+    btnHover: ["#343843", "#4b505c", "#212328"],
+    btnDown: ["#24262c", "", "#16171b"],
+    play: ["#5aa843", "#82cc67", "#3d7a2c"],
+    playHover: ["#67b84f", "#93d978", "#448633"],
+    playDown: ["#4f9a3a", "", "#336a25"],
+    panel: ["#1a1b1f", "#2e3138", "#111214"],
+    card: ["#202227", "#30333a", "#16171a"],
+    cardHover: ["#272a30", "#393c45", "#1a1b1f"],
+    input: ["#121316", "#2a2d33", "#08090a"],
+  },
 };
-for (const [name, spec] of Object.entries(kit)) write(`ui/${name}`, frame(spec));
+for (const [dir, colours] of Object.entries(themes)) {
+  for (const [name, spec] of Object.entries(kit(colours))) write(`ui/${dir}${name}`, frame(spec));
+}
 
 // ---------- signed-out player: a plain dark figure (64×64 skin layout) ----------
 
