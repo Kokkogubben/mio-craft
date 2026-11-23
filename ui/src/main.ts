@@ -107,7 +107,8 @@ interface Account {
   selected: boolean;
 }
 
-type Tab = "mods" | "browse" | "projects" | "console";
+type Tab = "mods" | "browse" | "servers" | "projects" | "console";
+type Server = { index: number; name: string; address: string; icon?: string };
 
 type BrowseKind = "mod" | "shader";
 
@@ -172,6 +173,8 @@ const S = {
   },
   updates: { instance: null as string | null, byFile: new Map<string, { title: string; latest: ModVersion }>(), checked: false },
   logs: new Map<string, string[]>(),
+  /** Each instance's multiplayer list, once loaded. */
+  servers: new Map<string, Server[]>(),
   progress: null as null | { task: string; current: number; total: number; message: string },
 };
 
@@ -572,24 +575,26 @@ function renderMain() {
     </header>
     ${crashBanner(inst)}
     <div class="tabs" role="tablist">
-      ${(["mods", "browse", "projects", "console"] as Tab[])
+      ${(["mods", "browse", "servers", "projects", "console"] as Tab[])
         .map((t) => {
           const label =
             t === "mods" ? `Mods <span class="count">${S.mods.length}</span>`
             : t === "browse" ? "Browse"
+            : t === "servers" ? `Servers${S.servers.has(inst.id) ? ` <span class="count">${S.servers.get(inst.id)!.length}</span>` : ""}`
             : t === "projects" ? `Claude projects <span class="count">${projectsFor(inst).length}</span>`
             : "Console";
           return `<button role="tab" class="tab ${S.tab === t ? "active" : ""}" data-action="tab" data-tab="${t}">${label}</button>`;
         })
         .join("")}
     </div>
-    <section class="tab-body">${S.tab === "mods" ? modsTab(inst) : S.tab === "browse" ? browseTab(inst) : S.tab === "projects" ? projectsTab(inst) : consoleTab(inst)}</section>`;
+    <section class="tab-body">${S.tab === "mods" ? modsTab(inst) : S.tab === "browse" ? browseTab(inst) : S.tab === "servers" ? serversTab(inst) : S.tab === "projects" ? projectsTab(inst) : consoleTab(inst)}</section>`;
   slide("tab", main.querySelector(".tabs"), main.querySelector(".tab.active"));
   if (mainSlide) {
     slideIn(main, 0, mainSlide * 28);
     mainSlide = 0;
   }
   if (S.tab === "browse" && S.browse.instance !== inst.id && !S.browse.loading) runSearch(false);
+  if (S.tab === "servers" && !S.servers.has(inst.id)) loadServers(inst.id);
   if (S.tab === "console") {
     const c = $("#console");
     c.scrollTop = c.scrollHeight;
@@ -985,6 +990,104 @@ function projectsTab(inst: Instance): string {
     ${projects.length ? `<div class="mod-list">${rows}</div>` : '<p class="muted pad">No Claude projects for this instance yet.</p>'}`;
 }
 
+// ---------- servers (the game's own multiplayer list, servers.dat) ----------
+
+let serversLoading = new Set<string>();
+
+function loadServers(id: string) {
+  if (serversLoading.has(id)) return;
+  serversLoading.add(id);
+  api<Server[]>("GET", `/instances/${enc(id)}/servers`)
+    .then((list) => S.servers.set(id, list))
+    .catch((e) => {
+      S.servers.set(id, []);
+      toast((e as Error).message, "err");
+    })
+    .finally(() => {
+      serversLoading.delete(id);
+      if (S.selected === id && S.tab === "servers") renderMain();
+    });
+}
+
+const SERVER_ICON = `<svg class="pix-icon" width="22" height="22" viewBox="0 0 11 11" shape-rendering="crispEdges" fill="currentColor"><path d="M1 1h9v4h-9zM1 6h9v4h-9z" opacity=".35"/><path d="M2 2h1v2h-1zM2 7h1v2h-1zM8 2h1v1h-1zM8 7h1v1h-1z"/></svg>`;
+
+function serversTab(inst: Instance): string {
+  const list = S.servers.get(inst.id);
+  const running = S.running.has(`game:${inst.id}`);
+  const launching = S.busy.has(`launch:${inst.id}`);
+  const rows = (list ?? [])
+    .map(
+      (s) => `
+      <div class="mod srv">
+        <span class="srv-icon">${s.icon ? `<img src="data:image/png;base64,${s.icon}" alt="" width="40" height="40"/>` : SERVER_ICON}</span>
+        <div class="mod-text">
+          <div class="mod-title"><span class="mod-name">${esc(s.name)}</span></div>
+          <div class="mod-file mono">${esc(s.address)}</div>
+        </div>
+        <div class="mod-actions">
+          <button class="btn small play" data-action="join-server" data-address="${esc(s.address)}" ${running || launching ? "disabled" : ""} title="Start the game and join ${esc(s.name)}">${PLAY_ICON} Join</button>
+          <button class="btn small ghost" data-action="edit-server" data-index="${s.index}" ${running ? "disabled" : ""}>Edit</button>
+          <button class="icon-btn" data-action="remove-server" data-index="${s.index}" ${running ? "disabled" : ""} title="Remove" aria-label="Remove server">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+          </button>
+        </div>
+      </div>`,
+    )
+    .join("");
+  return `
+    <div class="toolbar">
+      <span class="muted grow">${running ? "The game is running. Close it to change the list." : "The same list as Multiplayer in the game."}</span>
+      <button class="btn" data-action="add-server" ${running ? "disabled" : ""}>Add server</button>
+    </div>
+    ${
+      !list
+        ? '<div class="mod-list">' + '<div class="mod srv"><span class="srv-icon skel-box"></span><div class="mod-text"><span class="skel-line" style="width:40%"></span><span class="skel-line" style="width:25%"></span></div></div>'.repeat(3) + "</div>"
+        : list.length
+          ? `<div class="mod-list">${rows}</div>`
+          : `<div class="note">No servers yet. Add one and it also shows up under Multiplayer in the game.</div>`
+    }`;
+}
+
+/** Show an instance on the Instances page with one of its tabs open. */
+async function openTab(inst: Instance, tab: Tab) {
+  if (settingsOpen) closeSettings();
+  if (S.view !== "instances") setView("instances", true);
+  if (S.selected !== inst.id) await selectInstance(inst.id);
+  S.tab = tab;
+  renderMain();
+}
+
+function serverModal(inst: Instance, s?: Server) {
+  openModal(`
+    <h2>${s ? "Edit server" : "Add server"}</h2>
+    <label class="field"><span>Name</span><input id="sv-name" class="input" placeholder="Minecraft Server" value="${esc(s?.name ?? "")}" maxlength="64"/></label>
+    <label class="field"><span>Address</span><input id="sv-addr" class="input mono" placeholder="play.example.net" value="${esc(s?.address ?? "")}" maxlength="255" spellcheck="false" autocapitalize="off"/></label>
+    <p class="muted small">Add <code>:port</code> if the server doesn't use the usual one, like <code>play.example.net:25570</code>.</p>
+    <div class="modal-actions">
+      <button class="btn ghost" data-action="close-modal">Cancel</button>
+      <button class="btn primary" id="sv-save">${s ? "Save" : "Add server"}</button>
+    </div>`);
+  const go = async () => {
+    const btn = $<HTMLButtonElement>("#sv-save");
+    const body = { name: $<HTMLInputElement>("#sv-name").value, address: $<HTMLInputElement>("#sv-addr").value };
+    btn.disabled = true;
+    try {
+      const list = s
+        ? await api<Server[]>("PATCH", `/instances/${enc(inst.id)}/servers/${s.index}`, body)
+        : await api<Server[]>("POST", `/instances/${enc(inst.id)}/servers`, body);
+      S.servers.set(inst.id, list);
+      closeModal();
+      renderMain();
+    } catch (e) {
+      btn.disabled = false;
+      toast((e as Error).message, "err");
+    }
+  };
+  $("#sv-save").addEventListener("click", go);
+  for (const id of ["#sv-name", "#sv-addr"]) $(id).addEventListener("keydown", (e) => (e as KeyboardEvent).key === "Enter" && go());
+  $<HTMLInputElement>(s ? "#sv-name" : "#sv-addr").focus();
+}
+
 function consoleTab(inst: Instance): string {
   const sources = [`game:${inst.id}`, ...projectsFor(inst).flatMap((p) => [`build:${p.id}`, `dev:${p.id}`])];
   const lines = sources.flatMap((s) => (S.logs.get(s) ?? []).map((l) => ({ s, l })));
@@ -1054,6 +1157,7 @@ function onEvent(e: any) {
       break;
     case "process_exited":
       S.running.delete(e.source);
+      if (e.source.startsWith("game:")) S.servers.delete(e.source.slice(5));
       if (e.source.startsWith("game:") && e.code && e.code !== 0) setTimeout(loadInstanceData, 800);
       renderSidebar();
       renderMain();
@@ -2250,14 +2354,15 @@ async function duplicateInstance(inst: Instance) {
   }
 }
 
-function playInstance(inst: Instance) {
+/** Start the game; with `server`, it joins that server straight away. */
+function playInstance(inst: Instance, server?: string) {
   if (!S.accounts.length) {
     toast("Sign in with a Microsoft account that owns Minecraft first", "err");
     loginModal();
     return;
   }
   busy(`launch:${inst.id}`, async () => {
-    await api("POST", `/instances/${enc(inst.id)}/launch`, {});
+    await api("POST", `/instances/${enc(inst.id)}/launch`, server ? { server } : {});
   });
 }
 
@@ -2277,6 +2382,7 @@ document.addEventListener("contextmenu", (ev) => {
     "sep",
     { label: "Edit…", run: () => instanceModal(inst) },
     { label: "Copy game settings…", run: () => copySettingsModal(inst) },
+    { label: "Servers…", run: () => openTab(inst, "servers") },
     S.busy.has(`dup:${inst.id}`)
       ? { label: "Duplicating…", run: () => {}, disabled: true }
       : { label: "Duplicate", run: () => duplicateInstance(inst), disabled: running },
@@ -2682,6 +2788,29 @@ document.addEventListener("click", async (ev) => {
     case "instance-menu":
       if (inst) instanceModal(inst);
       break;
+    case "join-server":
+      if (inst) playInstance(inst, el.dataset.address!);
+      break;
+    case "add-server":
+      if (inst) serverModal(inst);
+      break;
+    case "edit-server": {
+      const sv = inst && S.servers.get(inst.id)?.find((x) => x.index === Number(el.dataset.index));
+      if (inst && sv) serverModal(inst, sv);
+      break;
+    }
+    case "remove-server": {
+      const sv = inst && S.servers.get(inst.id)?.find((x) => x.index === Number(el.dataset.index));
+      if (!inst || !sv) break;
+      if (!(await ask({ title: `Remove "${sv.name}"?`, body: `<code>${esc(sv.address)}</code> is removed from this instance's server list, in the game too.`, ok: "Remove", danger: true }))) break;
+      try {
+        S.servers.set(inst.id, await api<Server[]>("DELETE", `/instances/${enc(inst.id)}/servers/${sv.index}`));
+        renderMain();
+      } catch (e) {
+        toast((e as Error).message, "err");
+      }
+      break;
+    }
     case "play":
       if (inst) playInstance(inst);
       break;

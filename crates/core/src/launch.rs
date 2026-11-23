@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 
 use crate::auth::Account;
-use crate::mojang::{rules_allow, Argument, VersionJson};
+use crate::mojang::{rules_allow_with, Argument, VersionJson};
 use crate::{auth, http, instances, java, mojang, platform, process, Launcher};
 
 pub struct LaunchPlan {
@@ -45,13 +45,13 @@ pub fn substitute(s: &str, vars: &HashMap<&str, String>) -> String {
     out
 }
 
-fn expand(args: &[Argument], vars: &HashMap<&str, String>) -> Vec<String> {
+fn expand(args: &[Argument], vars: &HashMap<&str, String>, features: &[&str]) -> Vec<String> {
     let mut out = vec![];
     for a in args {
         match a {
             Argument::Plain(s) => out.push(substitute(s, vars)),
             Argument::Ruled { rules, value } => {
-                if rules_allow(&Some(rules.clone())) {
+                if rules_allow_with(&Some(rules.clone()), features) {
                     out.extend(value.to_vec().iter().map(|s| substitute(s, vars)));
                 }
             }
@@ -72,10 +72,33 @@ fn extract_natives(v: &VersionJson, libs: &Path, natives_dir: &Path) -> Result<(
     Ok(())
 }
 
+/// Does this version's launch arguments offer joining a server with Quick Play (1.20+)?
+fn has_quick_play(v: &VersionJson) -> bool {
+    v.arguments.as_ref().is_some_and(|a| {
+        a.game.iter().any(|x| match x {
+            Argument::Ruled { rules, .. } => rules.iter().any(|r| r.features.as_ref().is_some_and(|f| f.contains_key("is_quick_play_multiplayer"))),
+            _ => false,
+        })
+    })
+}
+
+/// The game arguments that join `server` straight away: Quick Play where the
+/// version has it, otherwise the older `--server` and `--port`.
+fn join_server(v: &VersionJson, server: &str, vars: &mut HashMap<&str, String>) -> (Vec<&'static str>, Vec<String>) {
+    if has_quick_play(v) {
+        vars.insert("quickPlayMultiplayer", server.to_string());
+        (vec!["is_quick_play_multiplayer"], vec![])
+    } else {
+        let (host, port) = crate::servers::split_address(server);
+        (vec![], vec!["--server".into(), host, "--port".into(), port.to_string()])
+    }
+}
+
 pub async fn plan(
     l: &Launcher,
     inst: &instances::Instance,
     account: &Account,
+    server: Option<&str>,
 ) -> Result<LaunchPlan> {
     let version_id = inst
         .version_id
@@ -143,6 +166,10 @@ pub async fn plan(
     vars.insert("classpath", cp.join(sep));
     vars.insert("classpath_separator", sep.into());
     vars.insert("library_directory", libs.to_string_lossy().into());
+    let (features, join_args) = match server {
+        Some(s) => join_server(&v, s, &mut vars),
+        None => (vec![], vec![]),
+    };
 
     let cfg = l.config.read().await.clone();
     let ram = inst.ram_mb.unwrap_or(cfg.default_ram_mb);
@@ -157,7 +184,7 @@ pub async fn plan(
     args.extend(live.jvm_args);
 
     match &v.arguments {
-        Some(a) if !a.jvm.is_empty() => args.extend(expand(&a.jvm, &vars)),
+        Some(a) if !a.jvm.is_empty() => args.extend(expand(&a.jvm, &vars, &features)),
         _ => {
             args.push(format!("-Djava.library.path={}", natives_dir.display()));
             args.push("-cp".into());
@@ -166,11 +193,12 @@ pub async fn plan(
     }
     args.push(v.main_class.clone().ok_or_else(|| anyhow!("version has no main class"))?);
     if let Some(a) = &v.arguments {
-        args.extend(expand(&a.game, &vars));
+        args.extend(expand(&a.game, &vars, &features));
     }
     if let Some(legacy) = &v.minecraft_arguments {
         args.extend(legacy.split_whitespace().map(|s| substitute(s, &vars)));
     }
+    args.extend(join_args);
 
     let jdk = match live.java_home {
         Some(jbr) => jbr,
@@ -187,7 +215,11 @@ pub fn game_source(instance_id: &str) -> String {
     format!("game:{instance_id}")
 }
 
-pub async fn launch(l: &Launcher, instance_id: &str, account_id: Option<&str>) -> Result<()> {
+/// Start the game. With `server`, it joins that server (`host` or `host:port`) straight away.
+pub async fn launch(l: &Launcher, instance_id: &str, account_id: Option<&str>, server: Option<&str>) -> Result<()> {
+    if let Some(s) = server {
+        crate::servers::check_address(s)?;
+    }
     let mut inst = instances::get(l, instance_id).await?;
     if inst.version_id.is_none() {
         inst = instances::install(l, instance_id).await?;
@@ -198,7 +230,7 @@ pub async fn launch(l: &Launcher, instance_id: &str, account_id: Option<&str>) -
     }
     crate::companion::sync(l, &inst).await?;
     let account = auth::usable_account(l, account_id).await?;
-    let plan = plan(l, &inst, &account).await?;
+    let plan = plan(l, &inst, &account, server).await?;
 
     let mut cmd = tokio::process::Command::new(&plan.java);
     cmd.args(&plan.args).current_dir(&plan.game_dir);
@@ -252,5 +284,38 @@ mod tests {
         assert_eq!(substitute("x${a}y${b}z", &v), "x1y${b}z");
         assert_eq!(substitute("${a", &v), "${a");
         assert_eq!(substitute("-Dp=${a}:${a}", &v), "-Dp=1:1");
+    }
+
+    /// 1.20+ joins with Quick Play from the version's own arguments; older
+    /// versions get --server and --port.
+    #[test]
+    fn joins_a_server() {
+        let modern: VersionJson = serde_json::from_value(serde_json::json!({
+            "id": "1.21.1", "mainClass": "net.minecraft.client.main.Main",
+            "arguments": { "jvm": [], "game": [
+                "--username", "${auth_player_name}",
+                { "rules": [{ "action": "allow", "features": { "is_demo_user": true } }], "value": "--demo" },
+                { "rules": [{ "action": "allow", "features": { "has_quick_plays_support": true } }], "value": ["--quickPlayPath", "${quickPlayPath}"] },
+                { "rules": [{ "action": "allow", "features": { "is_quick_play_multiplayer": true } }], "value": ["--quickPlayMultiplayer", "${quickPlayMultiplayer}"] },
+            ]}
+        }))
+        .unwrap();
+        let mut vars = HashMap::new();
+        vars.insert("auth_player_name", "Mio".to_string());
+        let (features, extra) = join_server(&modern, "play.example.net:25570", &mut vars);
+        assert!(extra.is_empty());
+        let args = expand(&modern.arguments.as_ref().unwrap().game, &vars, &features);
+        assert_eq!(args, vec!["--username", "Mio", "--quickPlayMultiplayer", "play.example.net:25570"]);
+        // Without a server none of the optional arguments appear.
+        assert_eq!(expand(&modern.arguments.as_ref().unwrap().game, &vars, &[]), vec!["--username", "Mio"]);
+
+        let old: VersionJson = serde_json::from_value(serde_json::json!({
+            "id": "1.12.2", "mainClass": "net.minecraft.client.main.Main",
+            "minecraftArguments": "--username ${auth_player_name}"
+        }))
+        .unwrap();
+        let (features, extra) = join_server(&old, "[::1]:25566", &mut vars);
+        assert!(features.is_empty());
+        assert_eq!(extra, vec!["--server", "::1", "--port", "25566"]);
     }
 }

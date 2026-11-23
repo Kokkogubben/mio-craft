@@ -183,23 +183,29 @@ pub struct JavaVersion {
 
 // ---------- rules ----------
 
-/// Launch features we advertise. We support none of the optional ones
-/// (demo mode, custom resolution, quick play) so all are false.
+/// Whether rules allow something, with none of the optional launch features
+/// (demo mode, custom resolution, quick play) turned on.
 pub fn rules_allow(rules: &Option<Vec<Rule>>) -> bool {
+    rules_allow_with(rules, &[])
+}
+
+/// Whether rules allow something, with the named launch features turned on
+/// (`is_quick_play_multiplayer`, say) and all others off.
+pub fn rules_allow_with(rules: &Option<Vec<Rule>>, features: &[&str]) -> bool {
     let Some(rules) = rules else { return true };
     if rules.is_empty() {
         return true;
     }
     let mut allowed = false;
     for r in rules {
-        if rule_matches(r) {
+        if rule_matches(r, features) {
             allowed = r.action == "allow";
         }
     }
     allowed
 }
 
-fn rule_matches(r: &Rule) -> bool {
+fn rule_matches(r: &Rule, on: &[&str]) -> bool {
     if let Some(os) = &r.os {
         if let Some(name) = &os.name {
             if name != platform::mojang_os() {
@@ -220,8 +226,7 @@ fn rule_matches(r: &Rule) -> bool {
         }
     }
     if let Some(features) = &r.features {
-        // A rule that requires any feature to be true never matches.
-        if features.values().any(|v| *v) {
+        if features.iter().any(|(k, v)| *v != on.contains(&k.as_str())) {
             return false;
         }
     }

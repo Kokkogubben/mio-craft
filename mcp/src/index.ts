@@ -375,13 +375,16 @@ server.registerTool(
 server.registerTool(
   "launch_game",
   {
-    description: "Launch an instance with the user's signed-in Minecraft account (installs missing files first).",
-    inputSchema: { instance_id: z.string() },
+    description: "Launch an instance with the user's signed-in Minecraft account (installs missing files first). With `server`, the game joins that multiplayer server once it has started.",
+    inputSchema: {
+      instance_id: z.string(),
+      server: z.string().optional().describe("Server address to join, `host` or `host:port`. Only when the user asked to join a server."),
+    },
   },
-  async ({ instance_id }) =>
+  async ({ instance_id, server }) =>
     run(async () => {
-      await call("POST", `/instances/${enc(instance_id)}/launch`, {});
-      return "Game launching. Use read_game_log to follow it.";
+      await call("POST", `/instances/${enc(instance_id)}/launch`, server ? { server } : {});
+      return server ? `Game launching and joining ${server}. Use read_game_log to follow it.` : "Game launching. Use read_game_log to follow it.";
     }),
 );
 

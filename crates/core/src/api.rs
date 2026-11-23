@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, modpack, instances, launch, loaders, mods, mojang, outfit, process, projects, scene, shaders, Launcher};
+use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, modpack, instances, launch, loaders, mods, mojang, outfit, process, servers, projects, scene, shaders, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -94,6 +94,8 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}", get(get_instance).patch(patch_instance).delete(delete_instance))
         .route("/instances/{id}/install", post(install_instance))
         .route("/instances/{id}/duplicate", post(duplicate_instance))
+        .route("/instances/{id}/servers", get(list_servers).post(add_server))
+        .route("/instances/{id}/servers/{index}", patch(update_server).delete(remove_server))
         .route("/game-options/sources", get(game_option_sources))
         .route("/game-options/copy", post(copy_game_options))
         .route(
@@ -248,6 +250,22 @@ async fn worn_cape(State(s): State<AppState>, Path(id): Path<String>) -> std::re
     Ok(([("content-type", "image/png"), ("cache-control", "no-store")], png).into_response())
 }
 
+async fn list_servers(State(s): State<AppState>, Path(id): Path<String>) -> R<Vec<servers::Server>> {
+    Ok(Json(servers::list(&s.l, &id).await?))
+}
+
+async fn add_server(State(s): State<AppState>, Path(id): Path<String>, Json(b): Json<servers::ServerInput>) -> R<Vec<servers::Server>> {
+    Ok(Json(servers::add(&s.l, &id, &b).await?))
+}
+
+async fn update_server(State(s): State<AppState>, Path((id, index)): Path<(String, usize)>, Json(b): Json<servers::ServerInput>) -> R<Vec<servers::Server>> {
+    Ok(Json(servers::update(&s.l, &id, index, &b).await?))
+}
+
+async fn remove_server(State(s): State<AppState>, Path((id, index)): Path<(String, usize)>) -> R<Vec<servers::Server>> {
+    Ok(Json(servers::remove(&s.l, &id, index).await?))
+}
+
 async fn account_outfit(State(s): State<AppState>, Path(id): Path<String>) -> R<outfit::Outfit> {
     Ok(Json(outfit::outfit(&s.l, &id).await?))
 }
@@ -392,11 +410,13 @@ async fn install_instance(State(s): State<AppState>, Path(id): Path<String>) -> 
 #[derive(Deserialize, Default)]
 struct LaunchBody {
     account_id: Option<String>,
+    /// Join this server (`host` or `host:port`) once the game has started.
+    server: Option<String>,
 }
 
 async fn launch_instance(State(s): State<AppState>, Path(id): Path<String>, body: Option<Json<LaunchBody>>) -> R<Value> {
     let b = body.map(|b| b.0).unwrap_or_default();
-    launch::launch(&s.l, &id, b.account_id.as_deref()).await?;
+    launch::launch(&s.l, &id, b.account_id.as_deref(), b.server.as_deref()).await?;
     Ok(ok())
 }
 

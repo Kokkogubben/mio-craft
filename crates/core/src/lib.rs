@@ -28,6 +28,7 @@ pub mod maven;
 pub mod modpack;
 pub mod mods;
 pub mod mojang;
+pub mod nbt;
 pub mod outfit;
 pub mod paths;
 pub mod platform;
@@ -35,6 +36,7 @@ pub mod process;
 pub mod projects;
 pub mod scene;
 pub mod secrets;
+pub mod servers;
 pub mod shaders;
 pub mod templates;
 
