@@ -1552,6 +1552,9 @@ async function instanceModal(inst: Instance) {
     </div>
     <label class="field"><span>Memory (MB)</span><input id="ie-ram" type="number" min="1024" step="512" class="input" value="${esc(inst.ram_mb ?? S.cfg?.default_ram_mb ?? 4096)}"/></label>
     <label class="field"><span>Java arguments</span><input id="ie-jvm" class="input mono" placeholder="-XX:+UseG1GC" value="${esc((inst.jvm_args ?? S.cfg?.extra_jvm_args ?? []).join(" "))}"/></label>
+    <div class="field"><span>Game settings</span>
+      <div class="row-btn"><button type="button" class="btn small ghost" id="ie-copyset">Copy settings from…</button><span class="muted small">Keybinds, FOV, sound, accessibility and more, from another instance or Minecraft.</span></div>
+    </div>
     <section class="settings-sec live-sec">
       <h3>⚡ Live mode <span class="muted small">applies the next time you press Play</span></h3>
       ${off ? `<p class="muted small">${esc(status.unsupported_reason)}</p>` : '<p class="muted small">Experimental: change the game while it runs. Singleplayer only; back up your world first.</p>'}
@@ -1605,6 +1608,7 @@ async function instanceModal(inst: Instance) {
     }
   });
   if (S.busy.has(`dup:${inst.id}`)) ($("#ie-dup") as HTMLButtonElement).disabled = true;
+  $("#ie-copyset").addEventListener("click", () => copySettingsModal(inst));
   $("#ie-dup").addEventListener("click", () => {
     closeModal();
     duplicateInstance(inst);
@@ -1639,6 +1643,104 @@ async function instanceModal(inst: Instance) {
     }
   });
   $("#ie-del").addEventListener("click", () => deleteInstance(inst));
+}
+
+// ---------- copying game settings (options.txt) ----------
+
+const OPTION_CATS: [string, string, string][] = [
+  ["controls", "Controls and keybinds", "Mods' keybinds too, and mouse settings"],
+  ["video", "Video", "FOV, render distance, brightness, GUI scale…"],
+  ["sound", "Sound", "Volume sliders and subtitles"],
+  ["accessibility", "Accessibility", "Narrator, text background, screen effects…"],
+  ["chat", "Chat", "Size, opacity and visibility"],
+  ["skin", "Skin parts", "Which skin layers show, and your main hand"],
+  ["language", "Language", ""],
+];
+
+/** Copy settings from another instance, the Minecraft Launcher or a file into `target` (and others). */
+function copySettingsModal(target: Instance) {
+  let fileText: string | null = null;
+  openModal(`
+    <h2>Copy game settings</h2>
+    <label class="field"><span>From</span>
+      <select id="cs-from" class="input" disabled><option>Looking for settings…</option></select>
+    </label>
+    <input type="file" id="cs-file" accept=".txt,text/plain" hidden/>
+    <div class="field"><span>Settings to copy</span>
+      <div class="cs-grid">
+        ${OPTION_CATS.map(([k, label, hint]) => `<label class="check"><input type="checkbox" class="cs-cat" value="${k}" checked/> <span>${label}${hint ? ` <span class="muted small">· ${hint}</span>` : ""}</span></label>`).join("")}
+      </div>
+    </div>
+    <div class="field"><span>Copy into</span>
+      <div class="cs-to">
+        ${S.instances
+          .map((i) => {
+            const running = S.running.has(`game:${i.id}`);
+            return `<label class="check"><input type="checkbox" class="cs-inst" value="${esc(i.id)}" ${i.id === target.id ? "checked" : ""} ${running ? "disabled" : ""}/> ${instIcon(i)} <span>${esc(i.name)} <span class="muted small">${esc(i.mc_version)}${running ? " · running" : ""}</span></span></label>`;
+          })
+          .join("")}
+      </div>
+    </div>
+    <p class="muted small">Each instance keeps its other settings, and its old ones are saved as <code>options.txt.bak</code>. A few settings don't carry over between very different Minecraft versions, and mods like Sodium, Iris and OptiFine keep their video settings in their own files.</p>
+    <div class="modal-actions">
+      <button class="btn ghost" data-action="close-modal">Cancel</button>
+      <button class="btn primary" id="cs-go" disabled>Copy settings</button>
+    </div>`);
+  const from = $<HTMLSelectElement>("#cs-from");
+  const syncTargets = () => {
+    // An instance can't copy into itself.
+    document.querySelectorAll<HTMLInputElement>(".cs-inst").forEach((c) => {
+      const self = c.value === from.value;
+      const running = S.running.has(`game:${c.value}`);
+      c.disabled = self || running;
+      if (self) c.checked = false;
+    });
+  };
+  api<{ id: string; name: string; mc_version: string | null }[]>("GET", "/game-options/sources")
+    .then((list) => {
+      if (!from.isConnected) return;
+      const others = list.filter((src) => src.id !== target.id);
+      from.innerHTML =
+        others.map((src) => `<option value="${esc(src.id)}">${esc(src.name)}${src.mc_version ? ` (${esc(src.mc_version)})` : ""}</option>`).join("") +
+        '<option value="__file">An options.txt file…</option>';
+      from.disabled = false;
+      $<HTMLButtonElement>("#cs-go").disabled = false;
+      syncTargets();
+    })
+    .catch((e) => toast((e as Error).message, "err"));
+  from.addEventListener("change", () => {
+    syncTargets();
+    if (from.value === "__file") $<HTMLInputElement>("#cs-file").click();
+  });
+  $<HTMLInputElement>("#cs-file").addEventListener("change", async (ev) => {
+    const f = (ev.target as HTMLInputElement).files?.[0];
+    if (!f) return;
+    fileText = await f.text();
+    from.querySelector<HTMLOptionElement>('option[value="__file"]')!.textContent = f.name;
+  });
+  $("#cs-go").addEventListener("click", async () => {
+    const categories = [...document.querySelectorAll<HTMLInputElement>(".cs-cat:checked")].map((c) => c.value);
+    const to = [...document.querySelectorAll<HTMLInputElement>(".cs-inst:checked")].map((c) => c.value);
+    if (!categories.length) return toast("Pick at least one kind of setting", "err");
+    if (!to.length) return toast("Pick an instance to copy into", "err");
+    const body = from.value === "__file" ? { text: fileText, to, categories } : { from: from.value, to, categories };
+    if (from.value === "__file" && fileText == null) return toast("Choose the options.txt file first", "err");
+    const go = $<HTMLButtonElement>("#cs-go");
+    go.disabled = true;
+    go.textContent = "Copying…";
+    try {
+      const res = await api<{ instance_id: string; copied: number; error: string | null }[]>("POST", "/game-options/copy", body);
+      closeModal();
+      const name = (id: string) => S.instances.find((i) => i.id === id)?.name ?? id;
+      const ok = res.filter((r) => !r.error);
+      if (ok.length) toast(ok.length === 1 ? `Copied ${ok[0].copied} settings into ${name(ok[0].instance_id)}` : `Copied settings into ${ok.length} instances`);
+      res.filter((r) => r.error).forEach((r) => toast(`${name(r.instance_id)}: ${r.error}`, "err"));
+    } catch (e) {
+      go.disabled = false;
+      go.textContent = "Copy settings";
+      toast((e as Error).message, "err");
+    }
+  });
 }
 
 async function deleteInstance(inst: Instance) {
@@ -1695,6 +1797,7 @@ document.addEventListener("contextmenu", (ev) => {
     { label: "Open folder", run: () => openPath(inst.game_dir).then(() => !inTauri && toast("Path copied")) },
     "sep",
     { label: "Edit…", run: () => instanceModal(inst) },
+    { label: "Copy game settings…", run: () => copySettingsModal(inst) },
     S.busy.has(`dup:${inst.id}`)
       ? { label: "Duplicating…", run: () => {}, disabled: true }
       : { label: "Duplicate", run: () => duplicateInstance(inst), disabled: running },

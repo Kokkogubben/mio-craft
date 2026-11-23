@@ -15,6 +15,7 @@ pub mod discord;
 pub mod dropped;
 pub mod events;
 pub mod forge;
+pub mod game_options;
 pub mod gradle;
 pub mod http;
 pub mod instances;

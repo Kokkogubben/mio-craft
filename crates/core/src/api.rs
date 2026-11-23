@@ -90,6 +90,8 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}", get(get_instance).patch(patch_instance).delete(delete_instance))
         .route("/instances/{id}/install", post(install_instance))
         .route("/instances/{id}/duplicate", post(duplicate_instance))
+        .route("/game-options/sources", get(game_option_sources))
+        .route("/game-options/copy", post(copy_game_options))
         .route(
             "/instances/{id}/files/{name}",
             post(add_file).layer(axum::extract::DefaultBodyLimit::max(1024 * 1024 * 1024)),
@@ -271,6 +273,14 @@ async fn instance_json(l: &Launcher, i: &instances::Instance) -> Value {
 async fn create_instance(State(s): State<AppState>, Json(req): Json<instances::NewInstance>) -> R<Value> {
     let i = instances::create(&s.l, req).await?;
     Ok(Json(instance_json(&s.l, &i).await))
+}
+
+async fn game_option_sources(State(s): State<AppState>) -> R<Vec<crate::game_options::Source>> {
+    Ok(Json(crate::game_options::sources(&s.l).await?))
+}
+
+async fn copy_game_options(State(s): State<AppState>, Json(req): Json<crate::game_options::CopyRequest>) -> R<Vec<crate::game_options::CopyResult>> {
+    Ok(Json(crate::game_options::copy(&s.l, req).await?))
 }
 
 #[derive(Deserialize, Default)]

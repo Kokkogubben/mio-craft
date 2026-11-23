@@ -41,6 +41,7 @@ MioCraft does three things:
 - Every instance keeps its **own game folder** (mods, saves, resource packs, logs) and its own memory and Java arguments (under **Edit**); game files, libraries and Java are shared between instances so they're only downloaded once
 - **Instance icons**: a colour, a pixel symbol or your own picture, under **Edit**
 - **Right-click an instance** to play, open its folder, edit, **duplicate** (a full copy with worlds and mods), export or delete it
+- **Copy game settings** between instances: keybinds (mods’ too), video, sound, accessibility, chat, skin parts and language, from another instance, the Minecraft Launcher or an `options.txt` file. Each instance keeps its other settings, keybinds are converted between the pre-1.13 and current formats, and the old file is kept as `options.txt.bak`
 - **Java downloaded automatically**: the launcher fetches the Java version each Minecraft version needs
 - **Microsoft account sign-in**, with **tokens kept in Windows Credential Manager**, not in a plain file
 - **Console** tab with the game's log, and a **crash helper**: when the game crashes, a banner shows what went wrong and which mods were involved
