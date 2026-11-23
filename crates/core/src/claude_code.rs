@@ -252,6 +252,9 @@ mod tests {
             last_exit: None,
             crash_dismissed_at: None,
             live: Default::default(),
+            icon_color: None,
+            icon_glyph: None,
+            icon_image: None,
         }
     }
 

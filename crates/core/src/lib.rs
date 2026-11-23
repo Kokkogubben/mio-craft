@@ -12,6 +12,7 @@ pub mod companion;
 pub mod config;
 pub mod crash;
 pub mod discord;
+pub mod dropped;
 pub mod events;
 pub mod forge;
 pub mod gradle;

@@ -89,6 +89,11 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances", get(list_instances).post(create_instance))
         .route("/instances/{id}", get(get_instance).patch(patch_instance).delete(delete_instance))
         .route("/instances/{id}/install", post(install_instance))
+        .route("/instances/{id}/duplicate", post(duplicate_instance))
+        .route(
+            "/instances/{id}/files/{name}",
+            post(add_file).layer(axum::extract::DefaultBodyLimit::max(1024 * 1024 * 1024)),
+        )
         .route("/instances/{id}/launch", post(launch_instance))
         .route("/instances/{id}/stop", post(stop_instance))
         .route("/instances/{id}/logs", get(instance_logs))
@@ -266,6 +271,25 @@ async fn instance_json(l: &Launcher, i: &instances::Instance) -> Value {
 async fn create_instance(State(s): State<AppState>, Json(req): Json<instances::NewInstance>) -> R<Value> {
     let i = instances::create(&s.l, req).await?;
     Ok(Json(instance_json(&s.l, &i).await))
+}
+
+#[derive(Deserialize, Default)]
+struct DuplicateBody {
+    name: Option<String>,
+}
+
+async fn duplicate_instance(State(s): State<AppState>, Path(id): Path<String>, body: Option<Json<DuplicateBody>>) -> R<Value> {
+    let i = instances::duplicate(&s.l, &id, body.map(|b| b.0).unwrap_or_default().name).await?;
+    Ok(Json(instance_json(&s.l, &i).await))
+}
+
+/// A file dragged onto the launcher: the raw bytes, named in the path.
+async fn add_file(State(s): State<AppState>, Path((id, name)): Path<(String, String)>, body: axum::body::Bytes) -> R<crate::dropped::Added> {
+    let inst = instances::get(&s.l, &id).await?;
+    if body.is_empty() {
+        return Err(anyhow::anyhow!("send the file as the request body").into());
+    }
+    Ok(Json(crate::dropped::add(&s.l, &inst, &name, body.to_vec()).await?))
 }
 
 async fn get_instance(State(s): State<AppState>, Path(id): Path<String>) -> R<Value> {

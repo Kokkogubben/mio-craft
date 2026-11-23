@@ -1,6 +1,8 @@
 import { api, apiBytes, appVersion, checkUpdate, connect, enc, events, inTauri, installUpdate, mcpServerPath, openPath, openUrl } from "./api";
 import { cachedHead, initPlayer, pausePlayer, showAccount } from "./player";
 import { resync, slide, slideIn } from "./slide";
+import { GLYPHS, ICON_COLORS, glyphSvg, inkFor, pictureToIcon } from "./icons";
+import { closeMenu, menuOpen, showMenu, type MenuItem } from "./menu";
 
 // ---------- types ----------
 
@@ -21,6 +23,18 @@ interface Instance {
   created_at: number;
   last_played: number | null;
   live?: LiveSettings;
+  icon_color?: string | null;
+  icon_glyph?: string | null;
+  icon_image?: string | null;
+}
+
+/** An instance's icon tile: its picture, or a glyph or letter on its colour. */
+function instIcon(i: Pick<Instance, "loader" | "icon_color" | "icon_glyph" | "icon_image">, big = false): string {
+  const cls = `inst-icon ${esc(i.loader)}${big ? " big" : ""}`;
+  if (i.icon_image) return `<span class="${cls} pic"><img src="${esc(i.icon_image)}" alt=""/></span>`;
+  const style = i.icon_color ? ` style="background:${esc(i.icon_color)};color:${inkFor(i.icon_color)}"` : "";
+  const inner = i.icon_glyph && GLYPHS.includes(i.icon_glyph) ? glyphSvg(i.icon_glyph, big ? 40 : 24) : esc(i.loader[0].toUpperCase());
+  return `<span class="${cls}"${style}>${inner}</span>`;
 }
 
 type View = "home" | "instances";
@@ -294,7 +308,7 @@ function renderSidebar() {
         .map(
           (i) => `
       <button class="inst ${i.id === S.selected ? "active" : ""}" data-action="select" data-id="${esc(i.id)}">
-        <span class="inst-icon ${esc(i.loader)}">${esc(i.loader[0].toUpperCase())}</span>
+        ${instIcon(i)}
         <span class="inst-text">
           <span class="inst-name">${esc(i.name)}</span>
           <span class="inst-meta">${esc(i.mc_version)} · ${loaderLabel(i.loader)}</span>
@@ -430,7 +444,7 @@ function instCard(i: Instance, action: string): string {
   const when = running ? '<span class="dot" title="Running"></span>' : `<span class="muted small">${i.last_played ? ago(i.last_played) : "Never played"}</span>`;
   return `
     <button class="icard ${i.id === S.selected ? "active" : ""}" data-action="${action}" data-id="${esc(i.id)}" title="${action === "pick-instance" ? "Double-click to open" : ""}">
-      <span class="inst-icon ${esc(i.loader)}">${esc(i.loader[0].toUpperCase())}</span>
+      ${instIcon(i)}
       <span class="inst-text">
         <span class="inst-name">${esc(i.name)}</span>
         <span class="inst-meta">${esc(i.mc_version)} · ${loaderLabel(i.loader)}</span>
@@ -534,8 +548,9 @@ function renderMain() {
   const playLabel = running ? "Stop" : launching ? "Starting…" : inst.installed ? "Play" : "Install & play";
   main.innerHTML = `
     <header class="inst-head">
-      <div>
-        <h1>${esc(inst.name)}</h1>
+      ${instIcon(inst, true)}
+      <div class="inst-head-text">
+        <h1 title="${esc(inst.name)}">${esc(inst.name)}</h1>
         <div class="chips">
           <span class="chip">Minecraft ${esc(inst.mc_version)}</span>
           <span class="chip ${esc(inst.loader)}">${loaderLabel(inst.loader)}${inst.loader_version ? ` ${esc(inst.loader_version)}` : ""}</span>
@@ -1515,6 +1530,26 @@ async function instanceModal(inst: Instance) {
   openModal(`
     <h2>Edit instance</h2>
     <label class="field"><span>Name</span><input id="ie-name" class="input" value="${esc(inst.name)}"/></label>
+    <div class="field"><span>Icon</span>
+      <div class="icon-edit">
+        <span id="ie-icon-preview"></span>
+        <div class="icon-opts">
+          <div class="swatches" role="radiogroup" aria-label="Icon colour">
+            <button type="button" class="swatch default ${esc(inst.loader)}" data-color="" title="Loader colour" aria-label="Loader colour"></button>
+            ${ICON_COLORS.map((c) => `<button type="button" class="swatch" data-color="${c}" style="background:${c}" title="${c}" aria-label="Colour ${c}"></button>`).join("")}
+          </div>
+          <div class="glyph-picks" role="radiogroup" aria-label="Icon symbol">
+            <button type="button" class="glyph-pick" data-glyph="" title="Letter">${esc(inst.loader[0].toUpperCase())}</button>
+            ${GLYPHS.map((g) => `<button type="button" class="glyph-pick" data-glyph="${g}" title="${g}" aria-label="${g}">${glyphSvg(g, 16)}</button>`).join("")}
+          </div>
+          <div class="pic-row">
+            <button type="button" class="btn small ghost" id="ie-pic">Use a picture…</button>
+            <button type="button" class="btn small ghost" id="ie-pic-clear">Remove picture</button>
+            <input type="file" id="ie-pic-file" accept="image/png,image/jpeg,image/gif,image/webp" hidden/>
+          </div>
+        </div>
+      </div>
+    </div>
     <label class="field"><span>Memory (MB)</span><input id="ie-ram" type="number" min="1024" step="512" class="input" value="${esc(inst.ram_mb ?? S.cfg?.default_ram_mb ?? 4096)}"/></label>
     <label class="field"><span>Java arguments</span><input id="ie-jvm" class="input mono" placeholder="-XX:+UseG1GC" value="${esc((inst.jvm_args ?? S.cfg?.extra_jvm_args ?? []).join(" "))}"/></label>
     <section class="settings-sec live-sec">
@@ -1527,9 +1562,52 @@ async function instanceModal(inst: Instance) {
       <label class="field slots ${off ? "dim" : ""}"><span>Slots (blocks and items each)</span><input id="lv-slot_count" type="number" min="1" max="256" class="input" value="${esc(L.slot_count)}" ${off ? "disabled" : ""}/></label>
     </section>
     <div class="modal-actions spread">
-      <button class="btn danger ghost" id="ie-del">Delete instance</button>
+      <span><button class="btn danger ghost" id="ie-del">Delete instance</button> <button class="btn ghost" id="ie-dup" title="Copy this instance with its worlds, mods and settings">Duplicate</button></span>
       <span><button class="btn ghost" data-action="close-modal">Cancel</button> <button class="btn primary" id="ie-save">Save</button></span>
     </div>`);
+  // Icon draft, saved with the rest.
+  const icon = { loader: inst.loader, icon_color: inst.icon_color ?? "", icon_glyph: inst.icon_glyph ?? "", icon_image: inst.icon_image ?? "" };
+  const drawIcon = () => {
+    $("#ie-icon-preview").innerHTML = instIcon(icon, true);
+    document.querySelectorAll<HTMLElement>(".swatch").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.color === icon.icon_color)));
+    document.querySelectorAll<HTMLElement>(".glyph-pick").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.glyph === icon.icon_glyph)));
+    $("#ie-pic-clear").hidden = !icon.icon_image;
+    document.querySelector(".icon-edit")!.classList.toggle("has-pic", !!icon.icon_image);
+  };
+  drawIcon();
+  document.querySelectorAll<HTMLElement>(".swatch").forEach((b) =>
+    b.addEventListener("click", () => {
+      icon.icon_color = b.dataset.color!;
+      drawIcon();
+    }),
+  );
+  document.querySelectorAll<HTMLElement>(".glyph-pick").forEach((b) =>
+    b.addEventListener("click", () => {
+      icon.icon_glyph = b.dataset.glyph!;
+      drawIcon();
+    }),
+  );
+  $("#ie-pic").addEventListener("click", () => $<HTMLInputElement>("#ie-pic-file").click());
+  $("#ie-pic-clear").addEventListener("click", () => {
+    icon.icon_image = "";
+    drawIcon();
+  });
+  $<HTMLInputElement>("#ie-pic-file").addEventListener("change", async (ev) => {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    try {
+      icon.icon_image = await pictureToIcon(file);
+      drawIcon();
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  });
+  $("#ie-dup").addEventListener("click", () => {
+    closeModal();
+    duplicateInstance(inst);
+  });
   $("#ie-save").addEventListener("click", async () => {
     try {
       const ram = $<HTMLInputElement>("#ie-ram").value;
@@ -1549,6 +1627,9 @@ async function instanceModal(inst: Instance) {
         ram_mb: ram ? Number(ram) : undefined,
         jvm_args: $<HTMLInputElement>("#ie-jvm").value.split(/\s+/).filter(Boolean),
         live,
+        icon_color: icon.icon_color,
+        icon_glyph: icon.icon_glyph,
+        icon_image: icon.icon_image,
       });
       if (S.running.has(`game:${inst.id}`) && live && JSON.stringify(live) !== JSON.stringify(L)) toast("Live mode changes apply the next time you launch");
       closeModal();
@@ -1556,17 +1637,65 @@ async function instanceModal(inst: Instance) {
       toast((e as Error).message, "err");
     }
   });
-  $("#ie-del").addEventListener("click", async () => {
-    if (!confirm(`Delete "${inst.name}" and everything in it (worlds, mods, settings)? This can't be undone.`)) return;
-    try {
-      await api("DELETE", `/instances/${enc(inst.id)}`);
-      closeModal();
-      toast("Instance deleted");
-    } catch (e) {
-      toast((e as Error).message, "err");
-    }
+  $("#ie-del").addEventListener("click", () => deleteInstance(inst));
+}
+
+async function deleteInstance(inst: Instance) {
+  if (!confirm(`Delete "${inst.name}" and everything in it (worlds, mods, settings)? This can't be undone.`)) return;
+  try {
+    await api("DELETE", `/instances/${enc(inst.id)}`);
+    closeModal();
+    toast("Instance deleted");
+  } catch (e) {
+    toast((e as Error).message, "err");
+  }
+}
+
+async function duplicateInstance(inst: Instance) {
+  toast(`Copying ${inst.name}…`);
+  try {
+    const copy = await api<Instance>("POST", `/instances/${enc(inst.id)}/duplicate`, {});
+    await loadInstances();
+    await selectInstance(copy.id);
+    toast(`Made ${copy.name}`);
+  } catch (e) {
+    toast((e as Error).message, "err");
+  }
+}
+
+function playInstance(inst: Instance) {
+  if (!S.accounts.length) {
+    toast("Sign in with a Microsoft account that owns Minecraft first", "err");
+    loginModal();
+    return;
+  }
+  busy(`launch:${inst.id}`, async () => {
+    await api("POST", `/instances/${enc(inst.id)}/launch`, {});
   });
 }
+
+// ---------- right-click menu on instances ----------
+
+document.addEventListener("contextmenu", (ev) => {
+  const card = (ev.target as HTMLElement).closest<HTMLElement>(".inst[data-id], .icard[data-id]");
+  const inst = card && S.instances.find((i) => i.id === card.dataset.id);
+  if (!inst) return;
+  ev.preventDefault();
+  const running = S.running.has(`game:${inst.id}`);
+  const items: MenuItem[] = [
+    running
+      ? { label: "Stop", run: () => api("POST", `/instances/${enc(inst.id)}/stop`).catch((e) => toast(e.message, "err")) }
+      : { label: inst.installed ? "Play" : "Install & play", run: () => playInstance(inst), disabled: S.busy.has(`launch:${inst.id}`) },
+    { label: "Open folder", run: () => openPath(inst.game_dir).then(() => !inTauri && toast("Path copied")) },
+    "sep",
+    { label: "Edit…", run: () => instanceModal(inst) },
+    { label: "Duplicate", run: () => duplicateInstance(inst), disabled: running },
+    ...(inst.loader !== "vanilla" ? [{ label: "Export modpack…", run: () => exportModal(inst) }] : []),
+    "sep",
+    { label: "Delete…", run: () => deleteInstance(inst), danger: true, disabled: running },
+  ];
+  showMenu(ev.clientX, ev.clientY, items, `${inst.name} actions`);
+});
 
 async function openClaude(body: { instance_id?: string; project_id?: string; request: string; crash?: boolean }, dryRun = false) {
   if (!body.request.trim() && !body.crash) {
@@ -1771,11 +1900,14 @@ function exportModal(inst: Instance) {
   });
 }
 
-$<HTMLInputElement>("#pack-file").addEventListener("change", async (ev) => {
+$<HTMLInputElement>("#pack-file").addEventListener("change", (ev) => {
   const input = ev.target as HTMLInputElement;
   const file = input.files?.[0];
   input.value = "";
-  if (!file) return;
+  if (file) importPack(file);
+});
+
+async function importPack(file: File) {
   openModal(`<h2>Importing ${esc(file.name)}</h2><p class="muted"><span class="spinner"></span> Downloading the pack's mods…</p>`);
   try {
     const r = await apiBytes<{ instance: Instance; downloaded: number; override_files: number; warnings: string[] }>("/modpacks/import", await file.arrayBuffer());
@@ -1794,7 +1926,87 @@ $<HTMLInputElement>("#pack-file").addEventListener("change", async (ev) => {
     closeModal();
     toast((e as Error).message, "err");
   }
+}
+
+// ---------- drag and drop ----------
+
+const DROP_KINDS: Record<string, string> = { mod: "mods", shader: "shader packs", resource_pack: "resource packs" };
+let dragDepth = 0;
+
+const hasFiles = (ev: DragEvent) => !!ev.dataTransfer && [...ev.dataTransfer.types].includes("Files");
+
+/** The instance a drop would go to: the card under the pointer, or the selected one. */
+function dropTarget(ev: DragEvent): Instance | undefined {
+  const card = (ev.target as HTMLElement | null)?.closest?.<HTMLElement>(".inst[data-id], .icard[data-id]");
+  return S.instances.find((i) => i.id === card?.dataset.id) ?? current() ?? undefined;
+}
+
+function showDropOverlay(ev: DragEvent) {
+  let o = document.getElementById("drop-overlay");
+  if (!o) {
+    o = document.createElement("div");
+    o.id = "drop-overlay";
+    o.innerHTML = '<div class="drop-box"><strong></strong><span class="muted small">Mods (.jar), shader and resource packs (.zip), or a modpack (.mrpack)</span></div>';
+    document.body.appendChild(o);
+  }
+  const t = dropTarget(ev);
+  o.querySelector("strong")!.textContent = t ? `Drop to add to ${t.name}` : "Drop a modpack to import it";
+  document.querySelectorAll(".drop-hover").forEach((e) => e.classList.remove("drop-hover"));
+  (ev.target as HTMLElement | null)?.closest?.(".inst[data-id], .icard[data-id]")?.classList.add("drop-hover");
+}
+
+function hideDropOverlay() {
+  dragDepth = 0;
+  document.getElementById("drop-overlay")?.remove();
+  document.querySelectorAll(".drop-hover").forEach((e) => e.classList.remove("drop-hover"));
+}
+
+document.addEventListener("dragenter", (ev) => {
+  if (!hasFiles(ev)) return;
+  ev.preventDefault();
+  dragDepth++;
+  showDropOverlay(ev);
 });
+document.addEventListener("dragover", (ev) => {
+  if (!hasFiles(ev)) return;
+  ev.preventDefault();
+  ev.dataTransfer!.dropEffect = "copy";
+  showDropOverlay(ev);
+});
+document.addEventListener("dragleave", (ev) => {
+  if (!hasFiles(ev)) return;
+  if (--dragDepth <= 0) hideDropOverlay();
+});
+document.addEventListener("drop", (ev) => {
+  if (!hasFiles(ev)) return;
+  ev.preventDefault();
+  const target = dropTarget(ev);
+  hideDropOverlay();
+  addDroppedFiles([...(ev.dataTransfer?.files ?? [])], target);
+});
+
+async function addDroppedFiles(files: File[], target: Instance | undefined) {
+  const packs = files.filter((f) => f.name.toLowerCase().endsWith(".mrpack"));
+  const rest = files.filter((f) => !packs.includes(f));
+  if (rest.length && !target) toast("Make an instance first, then drop mods onto it", "err");
+  if (rest.length && target) {
+    const added: Record<string, number> = {};
+    for (const f of rest) {
+      try {
+        const r = await apiBytes<{ file_name: string; kind: string; warning: string | null }>(`/instances/${enc(target.id)}/files/${enc(f.name)}`, await f.arrayBuffer());
+        added[r.kind] = (added[r.kind] ?? 0) + 1;
+        if (r.warning) toast(r.warning, "err");
+      } catch (e) {
+        toast((e as Error).message, "err");
+      }
+    }
+    const parts = Object.entries(added).map(([k, n]) => (n === 1 ? `1 ${DROP_KINDS[k].replace(/s$/, "")}` : `${n} ${DROP_KINDS[k]}`));
+    if (parts.length) toast(`Added ${parts.join(", ")} to ${target.name}`);
+    if (target.id === S.selected && added.resource_pack) loadInstanceData();
+  }
+  // One modpack at a time: each opens its own import dialog.
+  for (const f of packs) await importPack(f);
+}
 
 // ---------- actions ----------
 
@@ -1872,15 +2084,7 @@ document.addEventListener("click", async (ev) => {
       if (inst) instanceModal(inst);
       break;
     case "play":
-      if (!inst) break;
-      if (!S.accounts.length) {
-        toast("Sign in with a Microsoft account that owns Minecraft first", "err");
-        loginModal();
-        break;
-      }
-      busy(`launch:${inst.id}`, async () => {
-        await api("POST", `/instances/${enc(inst.id)}/launch`, {});
-      });
+      if (inst) playInstance(inst);
       break;
     case "stop":
       if (inst) await api("POST", `/instances/${enc(inst.id)}/stop`);
@@ -2083,10 +2287,30 @@ document.addEventListener("input", (ev) => {
 });
 
 document.addEventListener("keydown", (ev) => {
+  if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && ev.key.toLowerCase() === "f") {
+    ev.preventDefault();
+    focusSearch();
+    return;
+  }
   if (ev.key !== "Escape") return;
   if ($("#modal-root").classList.contains("show")) closeModal();
   else closeSettings();
 });
+
+/** Ctrl+F: the search box of the current tab (Browse, or the mod list). */
+function focusSearch() {
+  if (menuOpen()) closeMenu();
+  if ($("#modal-root").classList.contains("show") || !current()) return;
+  if (settingsOpen) closeSettings();
+  if (S.view !== "instances") setView("instances", true);
+  if (S.tab !== "browse" && S.tab !== "mods") {
+    S.tab = "mods";
+    renderMain();
+  }
+  const box = document.querySelector<HTMLInputElement>(S.tab === "browse" ? "#browse-q" : "#mod-filter");
+  box?.focus();
+  box?.select();
+}
 
 // Double-clicking an instance card on the home screen opens its page.
 document.addEventListener("dblclick", (ev) => {

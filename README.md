@@ -39,6 +39,8 @@ MioCraft does three things:
 
   LiteLoader, Rift and ModLoader are not supported: they are no longer maintained.
 - Every instance keeps its **own game folder** (mods, saves, resource packs, logs) and its own memory and Java arguments (under **Edit**); game files, libraries and Java are shared between instances so they're only downloaded once
+- **Instance icons**: a colour, a pixel symbol or your own picture, under **Edit**
+- **Right-click an instance** to play, open its folder, edit, **duplicate** (a full copy with worlds and mods), export or delete it
 - **Java downloaded automatically**: the launcher fetches the Java version each Minecraft version needs
 - **Microsoft account sign-in**, with **tokens kept in Windows Credential Manager**, not in a plain file
 - **Console** tab with the game's log, and a **crash helper**: when the game crashes, a banner shows what went wrong and which mods were involved
@@ -50,7 +52,8 @@ MioCraft does three things:
 **Mods**
 
 - **Built-in mod browser** for **Modrinth** and **CurseForge**: results are filtered to the instance's Minecraft version and loader (Quilt instances also see Fabric mods), required dependencies install automatically, and downloads are checked against their checksums
-- **Mod list** per instance: enable/disable, delete, search, and a *Rebuild* button for Claude-made mods
+- **Mod list** per instance: enable/disable, delete, search (**Ctrl+F**), and a *Rebuild* button for Claude-made mods
+- **Drag and drop**: drop mod `.jar` files, shader or resource pack `.zip` files onto the window (or onto an instance in the list) to add them, or a `.mrpack` to import a modpack. Mods made for another loader get a warning
 - **Built-in shader browser**: the same browser has a **Shaders** switch that finds shader packs for the instance's Minecraft version on Modrinth and CurseForge, installs them into its `shaderpacks` folder, lists and removes installed packs, and offers to install **Iris** (the mod that loads them) if it's missing
 - **Mod updates**: check browser-installed mods for newer compatible versions and update one or all
 - **Modpacks**: import Modrinth `.mrpack` files (Fabric, Quilt, Forge and NeoForge) and export instances to share, with Claude's mods included
@@ -210,10 +213,12 @@ use their own approved Azure app instead by entering its client ID under
 
 - **Playing**: any Minecraft version in Mojang's manifest, including snapshots,
   with the loaders listed under [Features](#features).
-- **Claude's mod templates**: Fabric on Minecraft 1.14.4 and newer (official
-  Mojang mappings; no mappings from 26.1, which is unobfuscated) and NeoForge on
-  1.20.2 and newer. There are no templates for Forge, Quilt or Legacy Fabric
-  instances; they can still play and use mods from the browser.
+- **Claude's mod templates**: Fabric and Quilt on Minecraft 1.14.4 and newer
+  (official Mojang mappings; no mappings from 26.1, which is unobfuscated; Quilt
+  projects are Fabric mods, which Quilt runs), NeoForge on 1.20.2 and newer, and
+  Forge on 1.7.10, 1.12.2 (RetroFuturaGradle) and 1.17 and newer (from Forge's
+  own MDK). There are no templates for Legacy Fabric instances; they can still
+  play and use mods from the browser.
 
 ## Developing
 
