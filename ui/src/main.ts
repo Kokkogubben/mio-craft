@@ -15,6 +15,7 @@ interface Instance {
   game_dir: string;
   mods_dir: string;
   ram_mb: number | null;
+  jvm_args?: string[] | null;
   created_at: number;
   last_played: number | null;
   live?: LiveSettings;
@@ -1252,132 +1253,215 @@ function loadSettingsInfo(): Promise<void> {
   return settingsInfoLoad;
 }
 
-/** Settings' layout with placeholders, shown for the moment its data is still loading. */
-function settingsSkeleton(): string {
-  const section = (title: string, lines: number[], boxes: number) => `
-    <section class="settings-sec">
-      <h3>${title}</h3>
-      ${lines.map((w) => `<span class="skel-line" style="width:${w}%"></span>`).join("")}
-      ${'<span class="skel-box"></span>'.repeat(boxes)}
-    </section>`;
-  return `
-    <div id="settings-skeleton">
+// ---------- settings page ----------
+// A full-window page that slides in over everything, with categories down the side. Every change
+// saves straight away.
+
+type SetCat = "claude" | "mods" | "discord" | "legacy" | "about" | "dev";
+const SET_CATS: [SetCat, string][] = [
+  ["claude", "✦ Claude Code"],
+  ["mods", "Mod browser"],
+  ["discord", "Discord"],
+  ["legacy", "Legacy"],
+  ["about", "About"],
+  ["dev", "Dev"],
+];
+let setCat: SetCat = "claude";
+let settingsOpen = false;
+let savedTimer: number | undefined;
+
+function openSettings(cat?: SetCat) {
+  if (cat) setCat = cat;
+  refreshClaudeCode();
+  const page = $("#settings-page");
+  page.innerHTML = `
+    <aside class="set-nav">
+      <button class="btn small set-back" data-action="close-settings">← Back</button>
       <h2>Settings</h2>
-      ${section("✦ Connect Claude Code", [64, 40], 1)}
-      ${section("Microsoft sign-in", [90, 55], 1)}
-      ${section("Mod browser", [80], 1)}
-      ${section("Game", [], 2)}
-      <div class="modal-actions"><button class="btn ghost" data-action="close-modal">Close</button></div>
+      <nav id="set-cats">
+        ${SET_CATS.map(([id, label]) => `<button class="set-cat" data-action="set-cat" data-cat="${id}">${label}</button>`).join("")}
+      </nav>
+    </aside>
+    <div class="set-body">
+      <div id="set-pane"></div>
+      <span id="set-saved" class="set-saved" aria-live="polite"></span>
     </div>`;
+  page.hidden = false;
+  void page.offsetWidth;
+  page.classList.add("open");
+  settingsOpen = true;
+  showSetCat(setCat, false);
 }
 
-async function settingsModal() {
-  refreshClaudeCode();
+function closeSettings() {
+  if (!settingsOpen) return;
+  settingsOpen = false;
+  const page = $("#settings-page");
+  page.classList.remove("open");
+  const done = () => {
+    if (!settingsOpen) {
+      page.hidden = true;
+      page.innerHTML = "";
+    }
+  };
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) done();
+  else page.addEventListener("transitionend", done, { once: true });
+}
+
+/** Show a category; its data is filled in as soon as it's loaded, with placeholders until then. */
+async function showSetCat(cat: SetCat, animate = true) {
+  setCat = cat;
+  document.querySelectorAll<HTMLElement>(".set-cat").forEach((b) => b.classList.toggle("active", b.dataset.cat === cat));
+  slide("setcat", $("#set-cats"), document.querySelector<HTMLElement>(".set-cat.active"));
+  const pane = $("#set-pane");
   if (!S.cfg || !settingsInfo) {
-    openModal(settingsSkeleton());
+    pane.innerHTML = `<h2>${SET_CATS.find(([id]) => id === cat)![1]}</h2><span class="skel-line" style="width:70%"></span><span class="skel-line" style="width:45%"></span><span class="skel-box"></span>`;
     try {
       const [cfg] = await Promise.all([S.cfg ?? api("GET", "/config"), loadSettingsInfo()]);
       S.cfg = cfg;
     } catch (e) {
-      closeModal();
       toast((e as Error).message, "err");
       return;
     }
-    // Closed while loading.
-    if (!document.querySelector("#settings-skeleton")) return;
+    // Closed or moved on while loading.
+    if (!settingsOpen || setCat !== cat) return;
   }
-  renderSettings(S.cfg, settingsInfo!);
+  pane.innerHTML = setCatHtml(cat, S.cfg, settingsInfo!);
+  if (animate) slideIn(pane, 0, 14);
 }
 
-function renderSettings(cfg: any, info: { path: string; version: string | null; status: any }) {
+const setSwitch = (id: string, on: boolean, title: string, desc: string, disabled = false) => `
+  <label class="live-opt">
+    <span class="switch"><input type="checkbox" id="${id}" ${on ? "checked" : ""} ${disabled ? "disabled" : ""}/><span></span></span>
+    <span><strong>${title}</strong><span class="muted small">${desc}</span></span>
+  </label>`;
+
+function setCatHtml(cat: SetCat, cfg: any, info: { path: string; version: string | null; status: any }): string {
   const { path, version, status } = info;
-  const cmd = `claude mcp add --scope user mio-craft -- node "${path}"`;
-  openModal(`
-    <h2>Settings</h2>
-    <section class="settings-sec">
-      <h3>✦ Connect Claude Code</h3>
-      <div id="cc-line">${claudeCodeBlock(lastCc)}</div>
-      <div class="copy"><code id="mcp-cmd">${esc(cmd)}</code><button class="btn small" data-copy="${esc(cmd)}">Copy</button></div>
-      <p class="muted small">Then ask Claude Code something like "make a Fabric mod for my instance that adds a ruby ore". MioCraft needs to be open while Claude Code uses it.</p>
-    </section>
-    <section class="settings-sec">
-      <h3>Microsoft sign-in</h3>
-      <p class="muted small">${S.hasBuiltinClientId ? "MioCraft signs you in with its own Azure app. Leave this empty unless you're developing with your own app ID." : "This build of MioCraft has no Microsoft app ID, so sign-in isn't available. Enter an Azure app ID that Mojang has approved here."}</p>
-      <label class="field"><span>Azure client ID (optional)</span><input id="set-cid" class="input mono" placeholder="00000000-0000-0000-0000-000000000000" value="${esc(cfg.ms_client_id ?? "")}"/></label>
-    </section>
-    <section class="settings-sec">
-      <h3>Mod browser</h3>
-      <p class="muted small">Modrinth works out of the box. CurseForge needs a free API key from <button class="link" data-action="open-url" data-url="https://console.curseforge.com/">console.curseforge.com</button>.</p>
-      <label class="field"><span>CurseForge API key</span><input id="set-cf" type="password" class="input mono" placeholder="Not set" value="${esc(cfg.curseforge_api_key ?? "")}"/></label>
-    </section>
-    <section class="settings-sec">
-      <h3>Game</h3>
-      <label class="field"><span>Default memory (MB)</span><input id="set-ram" type="number" min="1024" step="512" class="input" value="${esc(cfg.default_ram_mb)}"/></label>
-      <label class="field"><span>Extra Java arguments</span><input id="set-jvm" class="input mono" placeholder="-XX:+UseG1GC" value="${esc((cfg.extra_jvm_args ?? []).join(" "))}"/></label>
-    </section>
-    <section class="settings-sec">
-      <h3>Discord</h3>
-      <label class="live-opt">
-        <span class="switch"><input type="checkbox" id="set-discord" ${cfg.discord_rpc && status.has_discord_app_id ? "checked" : ""} ${status.has_discord_app_id ? "" : "disabled"}/><span></span></span>
-        <span><strong>Show what I'm playing</strong><span class="muted small">${status.has_discord_app_id ? "Shows the instance name, Minecraft version and mod loader on your Discord profile while a game or test client is running. Discord has to be open." : "This build of MioCraft has no Discord app ID, so it can't show a status on Discord."}</span></span>
-      </label>
-    </section>
-    <section class="settings-sec">
-      <h3>Legacy</h3>
-      <label class="live-opt">
-        <span class="switch"><input type="checkbox" id="set-stylized" ${cfg.stylized !== false ? "checked" : ""}/><span></span></span>
-        <span><strong>Stylized fonts and buttons</strong><span class="muted small">The pixel font and pixel-art buttons and panels. Turn it off to keep the home screen layout with MioCraft's original font and buttons.</span></span>
-      </label>
-      <label class="live-opt">
-        <span class="switch"><input type="checkbox" id="set-legacy-look" ${cfg.legacy_look ? "checked" : ""}/><span></span></span>
-        <span><strong>Legacy look</strong><span class="muted small">Use MioCraft's original layout, with your instances in a sidebar, instead of the home screen with your player.</span></span>
-      </label>
-      <label class="live-opt">
-        <span class="switch"><input type="checkbox" id="set-legacy" ${cfg.legacy_colors ? "checked" : ""}/><span></span></span>
-        <span><strong>Legacy colors</strong><span class="muted small">Use MioCraft's original green and grey instead of the copper colors.</span></span>
-      </label>
-    </section>
-    <section class="settings-sec">
-      <h3>Updates</h3>
-      <p class="muted small">MioCraft ${esc(version ?? status.version)}. It checks GitHub for a new version when it starts and asks before installing.</p>
-      <p><button class="btn small" data-action="check-update" ${inTauri ? "" : "disabled"}>Check for updates</button></p>
-    </section>
-    <section class="settings-sec">
-      <h3>Data folder</h3>
-      <button class="path" data-action="open-path" data-path="${esc(status.data_dir)}">${esc(status.data_dir)}</button>
-    </section>
-    <div class="modal-actions spread">
-      <button class="btn ghost" data-action="run-setup">Run setup again</button>
-      <span><button class="btn ghost" data-action="close-modal">Close</button> <button class="btn primary" id="set-save">Save</button></span>
-    </div>`);
-  $("#set-save").addEventListener("click", async () => {
-    const xp = !$<HTMLInputElement>("#set-legacy-look").checked;
-    const legacy = $<HTMLInputElement>("#set-legacy").checked;
-    const stylized = $<HTMLInputElement>("#set-stylized").checked;
-    try {
-      S.cfg = await api("PATCH", "/config", {
-        ms_client_id: $<HTMLInputElement>("#set-cid").value,
-        default_ram_mb: Number($<HTMLInputElement>("#set-ram").value) || 4096,
-        extra_jvm_args: $<HTMLInputElement>("#set-jvm").value.split(/\s+/).filter(Boolean),
-        curseforge_api_key: $<HTMLInputElement>("#set-cf").value,
-        discord_rpc: $<HTMLInputElement>("#set-discord").checked,
-        legacy_look: !xp,
-        legacy_colors: legacy,
-        stylized,
-      });
-      closeModal();
-      applyColors(legacy);
-      applyStyle(stylized);
-      if (xp !== S.xp) applyLook(xp);
-      await loadAccounts();
+  switch (cat) {
+    case "claude": {
+      const cmd = `claude mcp add --scope user mio-craft -- node "${path}"`;
+      return `
+        <h2>✦ Claude Code</h2>
+        <section class="settings-sec">
+          <h3>Connect Claude Code</h3>
+          <div id="cc-line">${claudeCodeBlock(lastCc)}</div>
+          <div class="copy"><code id="mcp-cmd">${esc(cmd)}</code><button class="btn small" data-copy="${esc(cmd)}">Copy</button></div>
+          <p class="muted small">Then ask Claude Code something like "make a Fabric mod for my instance that adds a ruby ore". MioCraft needs to be open while Claude Code uses it.</p>
+        </section>`;
+    }
+    case "mods":
+      return `
+        <h2>Mod browser</h2>
+        <section class="settings-sec">
+          <h3>CurseForge</h3>
+          <p class="muted small">Modrinth works out of the box. CurseForge needs a free API key from <button class="link" data-action="open-url" data-url="https://console.curseforge.com/">console.curseforge.com</button>.</p>
+          <label class="field"><span>CurseForge API key</span><input id="set-cf" type="password" class="input mono" placeholder="Not set" value="${esc(cfg.curseforge_api_key ?? "")}"/></label>
+        </section>`;
+    case "discord":
+      return `
+        <h2>Discord</h2>
+        <section class="settings-sec">
+          ${setSwitch(
+            "set-discord",
+            cfg.discord_rpc && status.has_discord_app_id,
+            "Show what I'm playing",
+            status.has_discord_app_id
+              ? "Shows the instance name, Minecraft version and mod loader on your Discord profile while a game or test client is running. Discord has to be open."
+              : "This build of MioCraft has no Discord app ID, so it can't show a status on Discord.",
+            !status.has_discord_app_id,
+          )}
+        </section>`;
+    case "legacy":
+      return `
+        <h2>Legacy</h2>
+        <section class="settings-sec">
+          ${setSwitch("set-stylized", cfg.stylized !== false, "Stylized fonts and buttons", "The pixel font and pixel-art buttons and panels. Turn it off to keep the home screen layout with MioCraft's original font and buttons.")}
+          ${setSwitch("set-legacy-look", !!cfg.legacy_look, "Legacy look", "Use MioCraft's original layout, with your instances in a sidebar, instead of the home screen with your player.")}
+          ${setSwitch("set-legacy", !!cfg.legacy_colors, "Legacy colors", "Use MioCraft's original green and grey instead of the copper colors.")}
+        </section>`;
+    case "about":
+      return `
+        <h2>About</h2>
+        <section class="settings-sec">
+          <h3>Updates</h3>
+          <p class="muted small">MioCraft ${esc(version ?? status.version)}. It checks GitHub for a new version when it starts and asks before installing.</p>
+          <p><button class="btn small" data-action="check-update" ${inTauri ? "" : "disabled"}>Check for updates</button></p>
+        </section>
+        <section class="settings-sec">
+          <h3>Data folder</h3>
+          <button class="path" data-action="open-path" data-path="${esc(status.data_dir)}">${esc(status.data_dir)}</button>
+        </section>
+        <section class="settings-sec">
+          <h3>Setup</h3>
+          <p class="muted small">Go through the first-run setup again.</p>
+          <p><button class="btn small" data-action="run-setup">Run setup again</button></p>
+        </section>`;
+    case "dev":
+      return `
+        <h2>Dev</h2>
+        <section class="settings-sec">
+          <h3>Microsoft sign-in</h3>
+          <p class="muted small">${S.hasBuiltinClientId ? "MioCraft signs you in with its own Azure app. Leave this empty unless you're developing with your own app ID." : "This build of MioCraft has no Microsoft app ID, so sign-in isn't available. Enter an Azure app ID that Mojang has approved here."}</p>
+          <label class="field"><span>Azure client ID (optional)</span><input id="set-cid" class="input mono" placeholder="00000000-0000-0000-0000-000000000000" value="${esc(cfg.ms_client_id ?? "")}"/></label>
+        </section>`;
+  }
+}
+
+/** Apply the look settings in `cfg`. */
+function applyLookSettings(cfg: any) {
+  applyColors(!!cfg.legacy_colors);
+  applyStyle(cfg.stylized !== false);
+  if (!cfg.legacy_look !== S.xp) applyLook(!cfg.legacy_look);
+}
+
+/** Save one change to the config. Look changes show straight away and go back if saving fails. */
+async function saveSetting(patch: Record<string, unknown>) {
+  const before = S.cfg;
+  const look = "legacy_colors" in patch || "stylized" in patch || "legacy_look" in patch;
+  if (look) applyLookSettings({ ...before, ...patch });
+  try {
+    S.cfg = await api("PATCH", "/config", patch);
+    if ("ms_client_id" in patch) await loadAccounts();
+    if ("curseforge_api_key" in patch) {
       S.browse.instance = null;
       if (S.tab === "browse") runSearch(false);
-      toast("Settings saved");
-    } catch (e) {
-      toast((e as Error).message, "err");
     }
-  });
+    const saved = document.querySelector<HTMLElement>("#set-saved");
+    if (saved) {
+      saved.textContent = "✓ Saved";
+      saved.classList.add("show");
+      clearTimeout(savedTimer);
+      savedTimer = window.setTimeout(() => saved.classList.remove("show"), 1400);
+    }
+  } catch (e) {
+    if (look && before) {
+      applyLookSettings(before);
+      if (settingsOpen && setCat === "legacy") showSetCat("legacy", false);
+    }
+    toast((e as Error).message, "err");
+  }
 }
+
+// Switches save when flipped, text fields when you leave them or press Enter.
+document.addEventListener("change", (ev) => {
+  const t = ev.target as HTMLInputElement;
+  if (!t.closest("#settings-page")) return;
+  switch (t.id) {
+    case "set-discord":
+      return void saveSetting({ discord_rpc: t.checked });
+    case "set-stylized":
+      return void saveSetting({ stylized: t.checked });
+    case "set-legacy-look":
+      return void saveSetting({ legacy_look: t.checked });
+    case "set-legacy":
+      return void saveSetting({ legacy_colors: t.checked });
+    case "set-cf":
+      return void saveSetting({ curseforge_api_key: t.value });
+    case "set-cid":
+      return void saveSetting({ ms_client_id: t.value });
+  }
+});
 
 async function loginModal() {
   if (!S.hasClientId) {
@@ -1435,7 +1519,8 @@ async function instanceModal(inst: Instance) {
   openModal(`
     <h2>Edit instance</h2>
     <label class="field"><span>Name</span><input id="ie-name" class="input" value="${esc(inst.name)}"/></label>
-    <label class="field"><span>Memory (MB, blank for default)</span><input id="ie-ram" type="number" min="1024" step="512" class="input" value="${esc(inst.ram_mb ?? "")}"/></label>
+    <label class="field"><span>Memory (MB)</span><input id="ie-ram" type="number" min="1024" step="512" class="input" value="${esc(inst.ram_mb ?? S.cfg?.default_ram_mb ?? 4096)}"/></label>
+    <label class="field"><span>Java arguments</span><input id="ie-jvm" class="input mono" placeholder="-XX:+UseG1GC" value="${esc((inst.jvm_args ?? S.cfg?.extra_jvm_args ?? []).join(" "))}"/></label>
     <section class="settings-sec live-sec">
       <h3>⚡ Live mode <span class="muted small">applies the next time you press Play</span></h3>
       ${off ? `<p class="muted small">${esc(status.unsupported_reason)}</p>` : '<p class="muted small">Experimental: change the game while it runs. Singleplayer only; back up your world first.</p>'}
@@ -1463,7 +1548,12 @@ async function instanceModal(inst: Instance) {
             slot_count: Number($<HTMLInputElement>("#lv-slot_count").value) || 64,
           };
       if (live?.unfreeze_registries && !L.unfreeze_registries && !confirm("Unfreezing registries is experimental and can crash the game or corrupt a world. Back up worlds you care about. Turn it on?")) return;
-      await api("PATCH", `/instances/${enc(inst.id)}`, { name: $<HTMLInputElement>("#ie-name").value, ram_mb: ram ? Number(ram) : undefined, live });
+      await api("PATCH", `/instances/${enc(inst.id)}`, {
+        name: $<HTMLInputElement>("#ie-name").value,
+        ram_mb: ram ? Number(ram) : undefined,
+        jvm_args: $<HTMLInputElement>("#ie-jvm").value.split(/\s+/).filter(Boolean),
+        live,
+      });
       if (S.running.has(`game:${inst.id}`) && live && JSON.stringify(live) !== JSON.stringify(L)) toast("Live mode changes apply the next time you launch");
       closeModal();
     } catch (e) {
@@ -1749,7 +1839,13 @@ document.addEventListener("click", async (ev) => {
       newInstanceModal();
       break;
     case "settings":
-      settingsModal();
+      openSettings();
+      break;
+    case "close-settings":
+      closeSettings();
+      break;
+    case "set-cat":
+      showSetCat(el.dataset.cat as SetCat);
       break;
     case "login":
       loginModal();
@@ -1842,6 +1938,7 @@ document.addEventListener("click", async (ev) => {
       break;
     }
     case "run-setup":
+      closeSettings();
       setupModal(0);
       break;
     case "crash-ask":
@@ -1882,7 +1979,7 @@ document.addEventListener("click", async (ev) => {
         await api("POST", "/claude-code/connect", { mcp_path: await mcpServerPath() });
         toast("Claude Code is connected to the launcher");
         lastCc = undefined;
-        settingsModal();
+        if (settingsOpen) showSetCat("claude", false);
       });
       break;
     case "import-pack":
@@ -1990,7 +2087,9 @@ document.addEventListener("input", (ev) => {
 });
 
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape") closeModal();
+  if (ev.key !== "Escape") return;
+  if ($("#modal-root").classList.contains("show")) closeModal();
+  else closeSettings();
 });
 
 // Double-clicking an instance card on the home screen opens its page.

@@ -16,7 +16,11 @@ pub struct Instance {
     pub loader_version: Option<String>,
     /// Version id to launch (e.g. `fabric-loader-0.16.9-1.21.1`). Set once installed.
     pub version_id: Option<String>,
+    /// Maximum memory for the game. None: the launcher-wide default from before memory was per instance.
     pub ram_mb: Option<u32>,
+    /// Extra JVM arguments for this instance. None: the launcher-wide ones from before they were per instance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jvm_args: Option<Vec<String>>,
     pub created_at: u64,
     #[serde(default)]
     pub last_played: Option<u64>,
@@ -131,6 +135,7 @@ pub async fn create(l: &Launcher, req: NewInstance) -> Result<Instance> {
         loader_version,
         version_id: None,
         ram_mb: req.ram_mb,
+        jvm_args: None,
         created_at: now(),
         last_played: None,
         last_exit: None,
@@ -176,6 +181,7 @@ pub async fn delete(l: &Launcher, id: &str) -> Result<()> {
 pub struct InstancePatch {
     pub name: Option<String>,
     pub ram_mb: Option<u32>,
+    pub jvm_args: Option<Vec<String>>,
     pub live: Option<crate::live::LiveSettings>,
 }
 
@@ -186,6 +192,9 @@ pub async fn update(l: &Launcher, id: &str, p: InstancePatch) -> Result<Instance
     }
     if let Some(r) = p.ram_mb {
         inst.ram_mb = Some(r.clamp(512, 65536));
+    }
+    if let Some(a) = p.jvm_args {
+        inst.jvm_args = Some(a.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
     }
     if let Some(live) = p.live {
         let live = live.normalized();

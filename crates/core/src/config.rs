@@ -9,9 +9,10 @@ pub struct Config {
     /// Azure application (client) ID used for Microsoft sign-in.
     /// Every third-party launcher needs its own; see README.
     pub ms_client_id: Option<String>,
+    /// Memory for instances that haven't set their own (memory is per instance since 0.6.1).
     pub default_ram_mb: u32,
     pub selected_account: Option<String>,
-    /// Extra JVM arguments added to every launch.
+    /// JVM arguments for instances that haven't set their own (they are per instance since 0.6.1).
     pub extra_jvm_args: Vec<String>,
     /// CurseForge API key (from console.curseforge.com). Modrinth needs none.
     pub curseforge_api_key: Option<String>,

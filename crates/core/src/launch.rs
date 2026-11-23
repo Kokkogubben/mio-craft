@@ -152,7 +152,7 @@ pub async fn plan(
         // Belt-and-braces Log4Shell mitigation for old versions.
         "-Dlog4j2.formatMsgNoLookups=true".to_string(),
     ];
-    args.extend(cfg.extra_jvm_args.iter().cloned());
+    args.extend(inst.jvm_args.as_ref().unwrap_or(&cfg.extra_jvm_args).iter().cloned());
     let live = crate::live::plan(l, inst, &v).await?;
     args.extend(live.jvm_args);
 

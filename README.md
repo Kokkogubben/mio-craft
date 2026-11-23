@@ -38,7 +38,7 @@ MioCraft does three things:
   | **Legacy Fabric** | 1.3 to 1.13.2 (Fabric for old versions) |
 
   LiteLoader, Rift and ModLoader are not supported: they are no longer maintained.
-- Every instance keeps its **own game folder** (mods, saves, resource packs, logs) and its own memory setting; game files, libraries and Java are shared between instances so they're only downloaded once
+- Every instance keeps its **own game folder** (mods, saves, resource packs, logs) and its own memory and Java arguments (under **Edit**); game files, libraries and Java are shared between instances so they're only downloaded once
 - **Java downloaded automatically**: the launcher fetches the Java version each Minecraft version needs
 - **Microsoft account sign-in**, with **tokens kept in Windows Credential Manager**, not in a plain file
 - **Console** tab with the game's log, and a **crash helper**: when the game crashes, a banner shows what went wrong and which mods were involved
@@ -142,7 +142,7 @@ pack, turn it on in the game under Options → Video Settings → Shader Packs.
 
 The launcher's MCP server runs on [Node.js](https://nodejs.org) (LTS), so install
 that alongside [Claude Code](https://claude.com/claude-code). Then open the
-launcher, go to **Settings → Connect Claude Code** and press **Connect
+launcher, go to **Settings → Claude Code** and press **Connect
 automatically**. Or run the command it shows, which looks like this:
 
 ```
@@ -168,7 +168,7 @@ loader, and the tools to use.
 
 Modrinth works out of the box. To browse CurseForge too, get a free API key at
 [console.curseforge.com](https://console.curseforge.com/) and paste it into
-**Settings → CurseForge API key**. Some CurseForge authors don't allow downloads
+**Settings → Mod browser → CurseForge API key**. Some CurseForge authors don't allow downloads
 from other apps; for those, the launcher shows a link to the mod's page so you
 can download it yourself and drop it in the mods folder.
 
@@ -183,7 +183,7 @@ browser; you enter the code there and MioCraft never sees your password.
 MioCraft signs you in with its own app ID, which Mojang has approved for the
 Minecraft API, so there is nothing to set up. Developers working on a fork can
 use their own approved Azure app instead by entering its client ID under
-**Settings → Azure client ID**.
+**Settings → Dev → Azure client ID**.
 
 ## MCP tools
 

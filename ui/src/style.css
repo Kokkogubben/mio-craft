@@ -2220,3 +2220,168 @@ body.xp.plain #home-recent .icard.active {
 .tabs > .tab.active {
   border-bottom-color: transparent;
 }
+
+/* ---------- settings page (slides in over everything) ---------- */
+
+#settings-page {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: 230px 1fr;
+  background: var(--bg);
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.4);
+}
+
+#settings-page.open {
+  transform: none;
+}
+
+#settings-page[hidden] {
+  display: none;
+}
+
+.set-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 12px;
+  background: var(--side);
+  border-right: 1px solid var(--border);
+  overflow: auto;
+}
+
+.set-back {
+  align-self: flex-start;
+}
+
+.set-nav h2 {
+  margin: 14px 10px 8px;
+  font-size: 20px;
+}
+
+#set-cats {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.set-cat {
+  position: relative;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-weight: 550;
+}
+
+.set-cat:hover,
+.set-cat.active {
+  color: var(--text);
+}
+
+.slide-setcat {
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+.set-body {
+  position: relative;
+  overflow: auto;
+  padding: 28px 40px 48px;
+}
+
+#set-pane {
+  max-width: 680px;
+}
+
+#set-pane > h2 {
+  margin: 0 0 18px;
+  font-size: 22px;
+}
+
+#set-pane .settings-sec {
+  margin: 0 0 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+#set-pane .settings-sec h3 {
+  margin-bottom: 8px;
+}
+
+#set-pane .live-opt + .live-opt {
+  margin-top: 14px;
+}
+
+#set-pane .field:last-child {
+  margin-bottom: 0;
+}
+
+.set-saved {
+  position: fixed;
+  right: 24px;
+  bottom: 20px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ok);
+  font-size: 13px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: none;
+}
+
+.set-saved.show {
+  opacity: 1;
+  transform: none;
+}
+
+body.xp:not(.plain) .set-nav {
+  border-right: 2px solid var(--outline);
+}
+
+body.xp:not(.plain) .set-cat,
+body.xp:not(.plain) #set-pane > h2,
+body.xp:not(.plain) .set-nav h2 {
+  font-family: var(--pixel);
+  font-weight: 400;
+  font-variant-ligatures: none;
+}
+
+body.xp:not(.plain) .set-cat {
+  border-radius: 0;
+}
+
+body.xp:not(.plain) .slide-setcat {
+  border-radius: 0;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+body.xp:not(.plain) #set-pane .settings-sec {
+  border: 8px solid transparent;
+  border-radius: 0;
+  border-image: var(--ui-panel) 4 fill / 8px stretch;
+  image-rendering: pixelated;
+  background: none;
+  padding: 8px 10px;
+}
+
+body.xp:not(.plain) .set-saved {
+  border-radius: 0;
+  border: 2px solid var(--outline);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #settings-page {
+    transition: none;
+  }
+}

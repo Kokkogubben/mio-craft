@@ -285,6 +285,7 @@ mod tests {
             loader_version: Some("1".into()),
             version_id: None,
             ram_mb: None,
+            jvm_args: None,
             created_at: 0,
             last_played: None,
             last_exit: None,
