@@ -1604,6 +1604,7 @@ async function instanceModal(inst: Instance) {
       toast((e as Error).message, "err");
     }
   });
+  if (S.busy.has(`dup:${inst.id}`)) ($("#ie-dup") as HTMLButtonElement).disabled = true;
   $("#ie-dup").addEventListener("click", () => {
     closeModal();
     duplicateInstance(inst);
@@ -1652,7 +1653,10 @@ async function deleteInstance(inst: Instance) {
 }
 
 async function duplicateInstance(inst: Instance) {
-  toast(`Copying ${inst.name}…`);
+  const key = `dup:${inst.id}`;
+  if (S.busy.has(key)) return;
+  S.busy.add(key);
+  toast(`Copying ${inst.name}… (worlds can take a while)`);
   try {
     const copy = await api<Instance>("POST", `/instances/${enc(inst.id)}/duplicate`, {});
     await loadInstances();
@@ -1660,6 +1664,8 @@ async function duplicateInstance(inst: Instance) {
     toast(`Made ${copy.name}`);
   } catch (e) {
     toast((e as Error).message, "err");
+  } finally {
+    S.busy.delete(key);
   }
 }
 
@@ -1689,7 +1695,9 @@ document.addEventListener("contextmenu", (ev) => {
     { label: "Open folder", run: () => openPath(inst.game_dir).then(() => !inTauri && toast("Path copied")) },
     "sep",
     { label: "Edit…", run: () => instanceModal(inst) },
-    { label: "Duplicate", run: () => duplicateInstance(inst), disabled: running },
+    S.busy.has(`dup:${inst.id}`)
+      ? { label: "Duplicating…", run: () => {}, disabled: true }
+      : { label: "Duplicate", run: () => duplicateInstance(inst), disabled: running },
     ...(inst.loader !== "vanilla" ? [{ label: "Export modpack…", run: () => exportModal(inst) }] : []),
     "sep",
     { label: "Delete…", run: () => deleteInstance(inst), danger: true, disabled: running },
@@ -1933,7 +1941,11 @@ async function importPack(file: File) {
 const DROP_KINDS: Record<string, string> = { mod: "mods", shader: "shader packs", resource_pack: "resource packs" };
 let dragDepth = 0;
 
-const hasFiles = (ev: DragEvent) => !!ev.dataTransfer && [...ev.dataTransfer.types].includes("Files");
+// Drags that start inside the page (an image, say) can also report "Files"; only outside files count.
+let innerDrag = false;
+document.addEventListener("dragstart", () => (innerDrag = true));
+document.addEventListener("dragend", () => (innerDrag = false));
+const hasFiles = (ev: DragEvent) => !innerDrag && !!ev.dataTransfer && [...ev.dataTransfer.types].includes("Files");
 
 /** The instance a drop would go to: the card under the pointer, or the selected one. */
 function dropTarget(ev: DragEvent): Instance | undefined {

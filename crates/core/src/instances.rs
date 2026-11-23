@@ -220,7 +220,8 @@ pub async fn duplicate(l: &Launcher, id: &str, name: Option<String>) -> Result<I
     let from = l.paths.instance_dir(&src.id);
     let to = l.paths.instance_dir(&new_id);
     let to2 = to.clone();
-    let copied = tokio::task::spawn_blocking(move || copy_dir(&from, &to2)).await?;
+    // instance.json is written last, so a half-done copy never shows up as an instance.
+    let copied = tokio::task::spawn_blocking(move || copy_dir(&from, &to2, true)).await?;
     if let Err(e) = copied {
         let _ = tokio::fs::remove_dir_all(&to).await;
         return Err(e.context("copying the instance"));
@@ -239,14 +240,17 @@ pub async fn duplicate(l: &Launcher, id: &str, name: Option<String>) -> Result<I
     Ok(inst)
 }
 
-fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> Result<()> {
+fn copy_dir(from: &std::path::Path, to: &std::path::Path, top: bool) -> Result<()> {
     std::fs::create_dir_all(to)?;
     for e in std::fs::read_dir(from)? {
         let e = e?;
         let ty = e.file_type()?;
+        if top && e.file_name() == "instance.json" {
+            continue;
+        }
         let dest = to.join(e.file_name());
         if ty.is_dir() {
-            copy_dir(&e.path(), &dest)?;
+            copy_dir(&e.path(), &dest, false)?;
         } else if ty.is_file() {
             std::fs::copy(e.path(), &dest)?;
         }
