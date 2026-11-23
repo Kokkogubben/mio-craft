@@ -1,5 +1,6 @@
 import { api, apiBytes, appVersion, checkUpdate, connect, enc, events, inTauri, installUpdate, mcpServerPath, openPath, openUrl } from "./api";
 import { cachedHead, initPlayer, pausePlayer, showAccount } from "./player";
+import { resync, slide, slideIn } from "./slide";
 
 // ---------- types ----------
 
@@ -286,7 +287,7 @@ async function loadAccounts() {
 
 function renderSidebar() {
   const list = $("#instance-list");
-  list.innerHTML = S.instances.length
+  const html = S.instances.length
     ? S.instances
         .map(
           (i) => `
@@ -301,6 +302,11 @@ function renderSidebar() {
         )
         .join("")
     : `<p class="side-empty">No instances yet.</p>`;
+  if (html !== list.dataset.html) {
+    list.innerHTML = html;
+    list.dataset.html = html;
+  }
+  slide("inst", list, list.querySelector(".inst.active"));
 
   // Classic layout: account and settings at the bottom of the sidebar.
   const acc = selectedAccount();
@@ -329,6 +335,7 @@ function headImg(a: Account, px: number): string {
 
 function renderTopbar() {
   document.querySelectorAll<HTMLElement>(".navtab").forEach((t) => t.classList.toggle("active", t.dataset.view === S.view));
+  slide("nav", S.xp ? $(".topnav") : null, $(".navtab.active"));
   const acc = selectedAccount();
   $("#top-right").innerHTML = `
     ${
@@ -350,13 +357,17 @@ async function refreshPlayer() {
   renderHome();
 }
 
-function setView(v: View) {
+/** Show a view. `animate` slides it in, for switches the user made. */
+function setView(v: View, animate = false) {
+  const before = S.view;
   S.view = v;
   const home = S.xp && v === "home";
   document.body.classList.toggle("v-home", home);
   pausePlayer(!home);
+  resync();
   renderTopbar();
   renderHome();
+  if (animate && S.xp && before !== v) slideIn(home ? $("#home") : $("#app"), home ? -48 : 48);
 }
 
 let playerReady = false;
@@ -451,7 +462,8 @@ function renderHome() {
   }
 
   const recent = byRecent(S.instances).slice(0, RECENT_LIMIT);
-  $("#home-recent").innerHTML = `
+  const box = $("#home-recent");
+  const html = `
     <div class="recent">
       <div class="recent-head">
         <span class="recent-title">Recently played</span>
@@ -465,6 +477,13 @@ function renderHome() {
           : `<p class="muted">No instances yet. Make one and it shows up here.</p>`
       }
     </div>`;
+  // Only re-render when something changed, so a sliding highlight isn't cut short.
+  if (html !== box.dataset.html) {
+    box.innerHTML = html;
+    box.dataset.html = html;
+  }
+  const grid = box.querySelector<HTMLElement>(".recent-grid");
+  slide("card", grid, grid?.querySelector(".icard.active") ?? null);
 }
 
 function chooseInstanceModal() {
@@ -476,12 +495,18 @@ function chooseInstanceModal() {
     </div>`);
 }
 
+// Which way the instance page slides in when it next renders: 1 from below, -1 from above.
+let mainSlide = 0;
+
 async function selectInstance(id: string) {
+  const order = S.instances.map((i) => i.id);
+  if (S.selected && S.selected !== id) mainSlide = order.indexOf(id) > order.indexOf(S.selected) ? 1 : -1;
   S.selected = id;
   S.modFilter = "";
   S.browse.instance = null;
   S.browse.hits = [];
   renderSidebar();
+  renderHome();
   await loadInstanceData();
 }
 
@@ -499,6 +524,7 @@ function renderMain() {
         <p>Pick a Minecraft version and a mod loader. Then ask Claude Code to make a mod for it, and it'll show up here.</p>
         <button class="btn primary" data-action="new-instance">New instance</button>
       </div>`;
+    slide("tab", null, null);
     return;
   }
   const running = S.running.has(`game:${inst.id}`);
@@ -536,6 +562,11 @@ function renderMain() {
         .join("")}
     </div>
     <section class="tab-body">${S.tab === "mods" ? modsTab(inst) : S.tab === "browse" ? browseTab(inst) : S.tab === "projects" ? projectsTab(inst) : consoleTab(inst)}</section>`;
+  slide("tab", main.querySelector(".tabs"), main.querySelector(".tab.active"));
+  if (mainSlide) {
+    slideIn(main, 0, mainSlide * 28);
+    mainSlide = 0;
+  }
   if (S.tab === "browse" && S.browse.instance !== inst.id && !S.browse.loading) runSearch(false);
   if (S.tab === "console") {
     const c = $("#console");
@@ -1698,7 +1729,7 @@ document.addEventListener("click", async (ev) => {
       await selectInstance(el.dataset.id!);
       break;
     case "view":
-      setView(el.dataset.view as View);
+      setView(el.dataset.view as View, true);
       break;
     case "pick-instance":
       if (el.dataset.id !== S.selected) await selectInstance(el.dataset.id!);
@@ -1965,7 +1996,7 @@ document.addEventListener("keydown", (ev) => {
 // Double-clicking an instance card on the home screen opens its page.
 document.addEventListener("dblclick", (ev) => {
   const card = (ev.target as HTMLElement).closest<HTMLElement>('[data-action="pick-instance"]');
-  if (card) setView("instances");
+  if (card) setView("instances", true);
 });
 
 // ---------- app updates ----------

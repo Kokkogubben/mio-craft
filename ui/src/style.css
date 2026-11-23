@@ -71,6 +71,8 @@ body {
   font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   user-select: none;
+  /* A window-sized app: panels scroll on their own, and slide-ins mustn't add a scrollbar. */
+  overflow: hidden;
 }
 
 input,
@@ -2112,4 +2114,109 @@ body.xp.plain .icard:hover {
 
 body.xp.plain .icard.active {
   border-color: var(--accent-dark);
+}
+
+/* ---------- sliding selection highlights (slide.ts) ---------- */
+
+/* The highlight is put first in its list; the items sit above it, except on the home cards,
+   where it's an outline drawn over the selected card. */
+#instance-list,
+.topnav,
+.recent-grid,
+.tabs {
+  position: relative;
+}
+
+#instance-list > .inst,
+.topnav > .navtab,
+.tabs > .tab {
+  position: relative;
+}
+
+.slide-pill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.12s;
+}
+
+.slide-pill.on {
+  opacity: 1;
+}
+
+/* Instance list: the item background (and the accent bar in the new look). */
+.slide-inst {
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+body.xp:not(.plain) .slide-inst {
+  border-radius: 0;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+#instance-list .inst.active,
+#instance-list .inst.active:hover {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Top bar tabs. */
+.slide-nav {
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+body.xp:not(.plain) .slide-nav {
+  background: none;
+  border-radius: 0;
+  border: 8px solid transparent;
+  border-image: var(--ui-tab-active) 4 fill / 8px stretch;
+  image-rendering: pixelated;
+}
+
+#topbar .navtab.active {
+  border-image: none;
+  background: transparent;
+}
+
+/* Recently played cards: an outline over the selected card. */
+.slide-card {
+  z-index: 1;
+  border: 1px solid var(--accent-dark);
+  border-radius: 8px;
+}
+
+body.xp:not(.plain) .slide-card {
+  border: 8px solid transparent;
+  border-radius: 0;
+  border-image: var(--ui-card-active) 4 / 8px stretch;
+  image-rendering: pixelated;
+}
+
+body.xp:not(.plain) #home-recent .icard.active {
+  border-image-source: var(--ui-card);
+}
+
+body.xp:not(.plain) #home-recent .icard.active:hover {
+  border-image-source: var(--ui-card-hover);
+}
+
+body.xp.plain #home-recent .icard.active {
+  border-color: var(--border);
+}
+
+/* Instance page tabs: the underline. */
+.slide-tab {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.tabs > .tab.active {
+  border-bottom-color: transparent;
 }
