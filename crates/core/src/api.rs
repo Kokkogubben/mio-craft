@@ -10,7 +10,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use futures::Stream;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, modpack, instances, launch, loaders, mods, mojang, process, projects, scene, shaders, Launcher};
+use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, modpack, instances, launch, loaders, mods, mojang, outfit, process, projects, scene, shaders, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -84,7 +84,11 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/accounts", get(accounts))
         .route("/accounts/login", post(login))
         .route("/accounts/{id}", delete(remove_account))
-        .route("/accounts/{id}/skin", get(account_skin))
+        .route("/accounts/{id}/skin", get(account_skin).post(upload_skin).delete(reset_skin))
+        .route("/accounts/{id}/outfit", get(account_outfit))
+        .route("/accounts/{id}/cape", get(worn_cape).put(set_cape))
+        .route("/skins", get(skin_library).post(save_skin))
+        .route("/skins/{id}", patch(update_skin).delete(delete_skin))
         .route("/scene/textures", post(scene_textures))
         .route("/instances", get(list_instances).post(create_instance))
         .route("/instances/{id}", get(get_instance).patch(patch_instance).delete(delete_instance))
@@ -234,7 +238,70 @@ async fn login(State(s): State<AppState>) -> R<auth::DeviceCode> {
 async fn account_skin(State(s): State<AppState>, Path(id): Path<String>) -> std::result::Result<Response, ApiError> {
     let skin = auth::skin(&s.l, &id).await?;
     let model = if skin.slim { "slim" } else { "default" };
-    Ok(([("content-type", "image/png"), ("x-skin-model", model), ("cache-control", "no-store")], skin.png).into_response())
+    let cape = skin.cape.unwrap_or_default();
+    Ok(([("content-type", "image/png"), ("x-skin-model", model), ("x-cape-id", cape.as_str()), ("cache-control", "no-store")], skin.png).into_response())
+}
+
+/// The cape the account is wearing, as a PNG (404-ish error when none).
+async fn worn_cape(State(s): State<AppState>, Path(id): Path<String>) -> std::result::Result<Response, ApiError> {
+    let png = outfit::worn_cape(&s.l, &id).await?;
+    Ok(([("content-type", "image/png"), ("cache-control", "no-store")], png).into_response())
+}
+
+async fn account_outfit(State(s): State<AppState>, Path(id): Path<String>) -> R<outfit::Outfit> {
+    Ok(Json(outfit::outfit(&s.l, &id).await?))
+}
+
+#[derive(Deserialize)]
+struct SkinQuery {
+    /// `slim` or `classic`.
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    name: String,
+}
+
+/// Upload a PNG (the raw body) as the account's skin.
+async fn upload_skin(State(s): State<AppState>, Path(id): Path<String>, Query(q): Query<SkinQuery>, body: axum::body::Bytes) -> R<outfit::Outfit> {
+    Ok(Json(outfit::set_skin(&s.l, &id, body.to_vec(), q.model == "slim").await?))
+}
+
+async fn reset_skin(State(s): State<AppState>, Path(id): Path<String>) -> R<outfit::Outfit> {
+    Ok(Json(outfit::reset_skin(&s.l, &id).await?))
+}
+
+#[derive(Deserialize)]
+struct CapeReq {
+    cape_id: Option<String>,
+}
+
+async fn set_cape(State(s): State<AppState>, Path(id): Path<String>, Json(req): Json<CapeReq>) -> R<outfit::Outfit> {
+    Ok(Json(outfit::set_cape(&s.l, &id, req.cape_id.as_deref()).await?))
+}
+
+async fn skin_library(State(s): State<AppState>) -> R<Vec<outfit::SavedSkin>> {
+    Ok(Json(outfit::library(&s.l).await))
+}
+
+/// Save a PNG (the raw body) to the skin library.
+async fn save_skin(State(s): State<AppState>, Query(q): Query<SkinQuery>, body: axum::body::Bytes) -> R<outfit::SavedSkin> {
+    Ok(Json(outfit::save(&s.l, &q.name, q.model == "slim", &body).await?))
+}
+
+#[derive(Deserialize)]
+struct SkinPatch {
+    name: Option<String>,
+    slim: Option<bool>,
+}
+
+async fn update_skin(State(s): State<AppState>, Path(id): Path<String>, Json(p): Json<SkinPatch>) -> R<Value> {
+    outfit::update(&s.l, &id, p.name.as_deref(), p.slim).await?;
+    Ok(ok())
+}
+
+async fn delete_skin(State(s): State<AppState>, Path(id): Path<String>) -> R<Value> {
+    outfit::delete(&s.l, &id).await?;
+    Ok(ok())
 }
 
 #[derive(Deserialize)]

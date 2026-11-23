@@ -16,6 +16,34 @@ const MC_LOGIN: &str = "https://api.minecraftservices.com/authentication/login_w
 const MC_PROFILE: &str = "https://api.minecraftservices.com/minecraft/profile";
 const SCOPE: &str = "XboxLive.signin offline_access";
 
+/// The Minecraft profile API. Debug builds can point it at a fake server
+/// (`MIO_CRAFT_MC_API`) for tests; release builds always use Mojang's.
+pub(crate) fn profile_api() -> String {
+    if cfg!(debug_assertions) {
+        if let Ok(u) = std::env::var("MIO_CRAFT_MC_API") {
+            return u.trim_end_matches('/').to_string();
+        }
+    }
+    MC_PROFILE.to_string()
+}
+
+/// Skin and cape images are only fetched from Mojang's texture server
+/// (or the fake API in debug builds). Returns the URL as https.
+pub(crate) fn texture_url(url: &str) -> Option<String> {
+    let url = url.strip_prefix("http://textures.minecraft.net/").map_or(url.to_string(), |rest| format!("https://textures.minecraft.net/{rest}"));
+    if url.starts_with("https://textures.minecraft.net/") {
+        return Some(url);
+    }
+    if cfg!(debug_assertions) {
+        if let Ok(base) = std::env::var("MIO_CRAFT_MC_API") {
+            if url.starts_with(base.trim_end_matches('/')) {
+                return Some(url);
+            }
+        }
+    }
+    None
+}
+
 /// MioCraft's own Azure app (client) ID, used unless Settings has another one.
 /// Client IDs of public desktop apps are not secrets. Mojang has to approve an
 /// app ID for the Minecraft API before sign-in works with it.
@@ -401,11 +429,15 @@ pub struct Skin {
     pub png: Vec<u8>,
     /// The thin-armed ("Alex") model.
     pub slim: bool,
+    /// The cape being worn, if any (its image is cached by `outfit`).
+    pub cape: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct SkinMeta {
     slim: bool,
+    #[serde(default)]
+    cape: Option<String>,
 }
 
 /// The account's current skin. Fetched from Mojang and kept in the cache, so
@@ -414,23 +446,41 @@ pub async fn skin(l: &Launcher, id: &str) -> Result<Skin> {
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         bail!("Not an account ID: {id}");
     }
-    let dir = l.paths.cache().join("skins");
-    let (png_path, meta_path) = (dir.join(format!("{id}.png")), dir.join(format!("{id}.json")));
+    let (png_path, meta_path) = skin_cache(l, id);
     match fetch_skin(l, id).await {
         Ok(s) => {
-            tokio::fs::create_dir_all(&dir).await?;
-            tokio::fs::write(&png_path, &s.png).await?;
-            http::write_json(&meta_path, &SkinMeta { slim: s.slim }).await?;
+            cache_skin(l, id, &s).await?;
             Ok(s)
         }
         Err(e) => match tokio::fs::read(&png_path).await {
             Ok(png) => {
-                let slim = http::read_json::<SkinMeta>(&meta_path).await.map(|m| m.slim).unwrap_or(false);
-                Ok(Skin { png, slim })
+                let meta = http::read_json::<SkinMeta>(&meta_path).await.ok();
+                Ok(Skin { png, slim: meta.as_ref().is_some_and(|m| m.slim), cape: meta.and_then(|m| m.cape) })
             }
             Err(_) => Err(e),
         },
     }
+}
+
+fn skin_cache(l: &Launcher, id: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let dir = l.paths.cache().join("skins");
+    (dir.join(format!("{id}.png")), dir.join(format!("{id}.json")))
+}
+
+/// Remember an account's skin, so it still shows when offline.
+pub(crate) async fn cache_skin(l: &Launcher, id: &str, s: &Skin) -> Result<()> {
+    let (png_path, meta_path) = skin_cache(l, id);
+    tokio::fs::create_dir_all(png_path.parent().unwrap()).await?;
+    tokio::fs::write(&png_path, &s.png).await?;
+    http::write_json(&meta_path, &SkinMeta { slim: s.slim, cape: s.cape.clone() }).await
+}
+
+/// The account's skin as last seen, without going online.
+pub(crate) async fn cached_skin(l: &Launcher, id: &str) -> Option<Skin> {
+    let (png_path, meta_path) = skin_cache(l, id);
+    let png = tokio::fs::read(&png_path).await.ok()?;
+    let meta = http::read_json::<SkinMeta>(&meta_path).await.ok();
+    Some(Skin { png, slim: meta.as_ref().is_some_and(|m| m.slim), cape: meta.and_then(|m| m.cape) })
 }
 
 async fn fetch_skin(l: &Launcher, id: &str) -> Result<Skin> {
@@ -438,28 +488,38 @@ async fn fetch_skin(l: &Launcher, id: &str) -> Result<Skin> {
     if acc.id != id {
         bail!("No signed-in account with ID {id}");
     }
-    let resp = l.http.get(MC_PROFILE).bearer_auth(&acc.mc_token).send().await?;
+    let resp = l.http.get(profile_api()).bearer_auth(&acc.mc_token).send().await?;
     if !resp.status().is_success() {
         bail!("Could not read the Minecraft profile ({})", resp.status());
     }
     let profile: serde_json::Value = resp.json().await?;
-    let (url, slim) = active_skin(&profile).ok_or_else(|| anyhow!("This profile has no skin"))?;
+    skin_from_profile(l, &profile).await
+}
+
+/// Download the active skin a profile response points at.
+pub(crate) async fn skin_from_profile(l: &Launcher, profile: &serde_json::Value) -> Result<Skin> {
+    let (url, slim) = active_skin(profile).ok_or_else(|| anyhow!("This profile has no skin"))?;
     let png = l.http.get(&url).send().await?.error_for_status()?.bytes().await?.to_vec();
     if !png.starts_with(b"\x89PNG") {
         bail!("The skin from Mojang isn't a PNG image");
     }
-    Ok(Skin { png, slim })
+    // The cape being worn, with its image cached for the home screen.
+    let mut cape = None;
+    if let Some(c) = profile["capes"].as_array().into_iter().flatten().find(|c| c["state"] == "ACTIVE") {
+        if let (Some(id), Some(url)) = (c["id"].as_str().filter(|s| crate::outfit::valid_cape_id(s)), c["url"].as_str().and_then(texture_url)) {
+            if crate::outfit::cape_png(l, id, &url).await.is_ok() {
+                cape = Some(id.to_string());
+            }
+        }
+    }
+    Ok(Skin { png, slim, cape })
 }
 
 /// The active skin's URL (always https) and whether it uses the slim model.
 fn active_skin(profile: &serde_json::Value) -> Option<(String, bool)> {
     let skins = profile["skins"].as_array()?;
     let s = skins.iter().find(|s| s["state"] == "ACTIVE").or(skins.first())?;
-    let url = s["url"].as_str()?;
-    let url = url.strip_prefix("http://").map_or(url.to_string(), |rest| format!("https://{rest}"));
-    if !url.starts_with("https://textures.minecraft.net/") {
-        return None;
-    }
+    let url = texture_url(s["url"].as_str()?)?;
     Some((url, s["variant"].as_str().is_some_and(|v| v.eq_ignore_ascii_case("slim"))))
 }
 

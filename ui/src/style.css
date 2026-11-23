@@ -1979,6 +1979,10 @@ body.xp:not(.plain) .toast {
   border-left: 4px solid var(--ok);
 }
 
+body.xp:not(.plain) .toast.err {
+  border-left-color: var(--danger);
+}
+
 /* Which chrome each layout shows: the classic sidebar header and footer, or
    the new look's top bar and home screen. */
 body:not(.xp) #topbar,
@@ -2675,4 +2679,253 @@ body.xp:not(.plain) .cs-to .inst-icon {
 .cs-to .check:has(input:disabled) {
   opacity: 0.45;
   cursor: default;
+}
+
+/* ---------- outfit: the hover tag on the home player, and the dialog ---------- */
+
+/* Placed on the player's chest every frame while hovering (player.ts). */
+#outfit-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  padding: 3px 8px 5px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 14px;
+  line-height: 16px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+#outfit-tag.show {
+  opacity: 1;
+}
+
+body.xp:not(.plain) #outfit-tag {
+  font-family: var(--pixel);
+}
+
+.modal.outfit-modal {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.outfit {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 18px;
+}
+
+.of-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.of-view {
+  position: relative;
+  height: 300px;
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.of-view canvas {
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  transition: opacity 0.2s;
+}
+
+.of-view canvas:active {
+  cursor: grabbing;
+}
+
+.of-view canvas.loading {
+  opacity: 0;
+}
+
+.of-hint {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  pointer-events: none;
+}
+
+.of-model button {
+  padding: 6px 4px;
+  font-size: 12px;
+}
+
+.of-right h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.of-right h3:not(:first-child) {
+  margin-top: 14px;
+}
+
+.of-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 8px;
+  max-height: 236px;
+  overflow: auto;
+  padding: 2px;
+}
+
+.of-grid.capes {
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  max-height: 150px;
+}
+
+.of-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-height: 128px;
+  padding: 6px 4px 5px;
+  background: var(--surface-2);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.of-tile.cape {
+  min-height: 100px;
+}
+
+.of-tile:hover {
+  border-color: var(--border);
+}
+
+.of-tile.on {
+  border-color: var(--accent);
+}
+
+.of-tile img {
+  width: 48px;
+  height: 96px;
+  image-rendering: pixelated;
+  margin: auto 0;
+}
+
+.of-tile.cape img {
+  width: 40px;
+  height: 64px;
+}
+
+.of-blank {
+  display: block;
+  width: 40px;
+  height: 80px;
+  margin: auto 0;
+  background: var(--field);
+  border-radius: 4px;
+}
+
+.of-tile.cape .of-blank {
+  height: 64px;
+}
+
+/* "No cape": an empty frame with a line through it. */
+.of-blank.none {
+  background: linear-gradient(to top right, transparent calc(50% - 1px), var(--muted) 50%, transparent calc(50% + 1px));
+  border: 2px dashed var(--border);
+  opacity: 0.7;
+}
+
+.of-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.of-tile.on .of-name {
+  color: var(--text);
+}
+
+.of-tile.add {
+  border: 2px dashed var(--border);
+  background: transparent;
+}
+
+.of-plus {
+  margin: auto 0;
+  font-size: 28px;
+  color: var(--muted);
+}
+
+.of-del {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--muted);
+  opacity: 0;
+}
+
+.of-tile:hover .of-del,
+.of-del.armed {
+  opacity: 1;
+}
+
+.of-del:hover,
+.of-del.armed {
+  background: var(--danger, #c0392b);
+  color: #fff;
+}
+
+.of-del.armed {
+  font-size: 10px;
+  padding: 1px 4px;
+}
+
+.of-nocapes {
+  align-self: center;
+  grid-column: span 3;
+}
+
+.of-tile.skel {
+  cursor: default;
+  overflow: hidden;
+}
+
+.of-tile.skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.07), transparent);
+  animation: skel 1.2s ease-in-out infinite;
+}
+
+.outfit-modal .modal-actions .grow {
+  flex: 1;
+}
+
+@media (max-width: 640px) {
+  .outfit {
+    grid-template-columns: 1fr;
+  }
+}
+
+body.xp:not(.plain) .of-tile,
+body.xp:not(.plain) .of-view {
+  border-radius: 0;
 }

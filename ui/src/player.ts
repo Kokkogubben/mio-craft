@@ -4,7 +4,8 @@
 // from Mojang.
 
 import { FunctionAnimation, SkinViewer, type PlayerObject } from "skinview3d";
-import { DirectionalLight, Group, Mesh, MeshBasicMaterial, PCFSoftShadowMap, Vector3 } from "three";
+import { DirectionalLight, Group, Mesh, MeshBasicMaterial, type Object3D, PCFSoftShadowMap, Raycaster, Vector2, Vector3 } from "three";
+import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
 import { api, apiBlob, enc } from "./api";
 import { buildAtlas, buildDiorama, loadDiorama, makePetals, SUN, textureNames, type Petals, type Structure } from "./scene";
 
@@ -162,6 +163,55 @@ function placeCamera() {
   viewer.playerObject.position.copy(seat).add(new Vector3(0, seated ? 6 : 16, 0));
 }
 
+// ---------- hovering and clicking the player ----------
+
+let outline: OutlinePass | null = null;
+let hovering = false;
+let onPick: (() => void) | null = null;
+let tag: HTMLElement | null = null;
+const ray = new Raycaster();
+const ndc = new Vector2();
+const tagPos = new Vector3();
+
+/** What clicking the player does (signed in only). */
+export function onPlayerClick(fn: () => void) {
+  onPick = fn;
+}
+
+function shown3d(o: Object3D | null): boolean {
+  for (; o; o = o.parent) if (!o.visible) return false;
+  return true;
+}
+
+/** Is the pointer (canvas pixels) over the player? */
+function overPlayer(x: number, y: number): boolean {
+  if (!viewer || !seated || !onPick) return false;
+  ndc.set((x / viewer.width) * 2 - 1, -(y / viewer.height) * 2 + 1);
+  ray.setFromCamera(ndc, viewer.camera);
+  return ray.intersectObject(viewer.playerObject, true).some((h) => shown3d(h.object));
+}
+
+function setHover(on: boolean) {
+  if (hovering === on) return;
+  hovering = on;
+  if (outline) outline.enabled = on;
+  if (tag) tag.classList.toggle("show", on);
+  if (viewer) viewer.canvas.style.cursor = on ? "pointer" : "";
+}
+
+/** A crisp white outline around the player, drawn while the pointer is over it. */
+function addOutline(v: SkinViewer) {
+  outline = new OutlinePass(new Vector2(v.width, v.height), v.scene, v.camera, [v.playerObject]);
+  outline.visibleEdgeColor.set(0xffffff);
+  outline.hiddenEdgeColor.set(0xffffff);
+  outline.edgeStrength = 6;
+  outline.edgeGlow = 0;
+  outline.edgeThickness = 1;
+  outline.enabled = false;
+  // After the scene is drawn, before the anti-aliasing pass.
+  v.composer.insertPass(outline, 1);
+}
+
 // ---------- pose: sitting, breathing, head following the cursor ----------
 
 const cursor = { x: 0, y: 0, active: false };
@@ -173,6 +223,8 @@ const headPos = new Vector3();
 const LEAN = -0.26;
 /** Where the hips are in the skin model: the point the upper body leans around. */
 const HIPS_Y = -12;
+/** How far back the cape reaches while seated, in radians from hanging straight down. */
+const CAPE_DRAPE = 0.3;
 
 /** A point on the model's centre line at height `y`, turned by `angle` about the hips. Returns [x, y, z]. */
 function aboutHips(y: number, angle: number): [number, number, number] {
@@ -201,6 +253,12 @@ function pose(player: PlayerObject, t: number, delta: number) {
     s.leftArm.position.set(5, sy, sz);
     s.rightArm.rotation.set(-0.55 + breath * 0.025, 0, 0.06);
     s.leftArm.rotation.set(-0.55 + breath * 0.025, 0, -0.06);
+    // The cape hangs from the shoulders, which lean back with the body, and
+    // reaches back over the table top instead of through it.
+    const c = Math.cos(lean), sn = Math.sin(lean);
+    const [dy, dz] = [0 - HIPS_Y, -2];
+    player.cape.position.set(0, 8 + HIPS_Y + dy * c - dz * sn, dy * sn + dz * c);
+    player.cape.rotation.x = CAPE_DRAPE + breath * 0.01;
   } else {
     // Standing still, arms swaying gently with the breath.
     s.rightLeg.rotation.set(0, 0, 0);
@@ -212,6 +270,8 @@ function pose(player: PlayerObject, t: number, delta: number) {
     s.leftArm.position.set(5, -2, 0);
     s.rightArm.rotation.set(0, 0, 0.05 + breath * 0.03);
     s.leftArm.rotation.set(0, 0, -0.05 - breath * 0.03);
+    player.cape.position.set(0, 8, -2);
+    player.cape.rotation.x = (10.8 * Math.PI) / 180;
   }
 
   // Look towards the cursor, eased and limited to a natural range.
@@ -228,6 +288,13 @@ function pose(player: PlayerObject, t: number, delta: number) {
   head.yaw += (ty - head.yaw) * k;
   head.pitch += (tp - head.pitch) * k;
   s.head.rotation.set(head.pitch, head.yaw, 0);
+
+  // Keep the "Change outfit" tag on the player's chest.
+  if (hovering && tag && viewer) {
+    s.body.getWorldPosition(tagPos);
+    const p = tagPos.project(viewer.camera);
+    tag.style.transform = `translate(${(p.x * 0.5 + 0.5) * viewer.width}px, ${(-p.y * 0.5 + 0.5) * viewer.height}px) translate(-50%, -50%)`;
+  }
 
   // Keep the name above the player's head.
   if (label && viewer) {
@@ -253,9 +320,29 @@ export function initPlayer(canvas: HTMLCanvasElement, nameLabel: HTMLElement) {
   viewer.controls.enablePan = false;
   viewer.controls.maxDistance = 5000;
   viewer.animation = new FunctionAnimation(pose);
+  // For checking the scene from the browser console while developing.
+  if (import.meta.env.DEV) (window as unknown as { homeViewer: SkinViewer }).homeViewer = viewer;
   addSun(viewer);
+  addOutline(viewer);
   placeCamera();
   shown = "";
+
+  tag = document.createElement("div");
+  tag.id = "outfit-tag";
+  tag.textContent = "Change outfit";
+  home.appendChild(tag);
+  const local = (e: PointerEvent | MouseEvent) => {
+    const r = canvas.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top] as const;
+  };
+  canvas.addEventListener("pointermove", (e) => setHover(overPlayer(...local(e))));
+  canvas.addEventListener("pointerleave", () => setHover(false));
+  canvas.addEventListener("click", (e) => {
+    if (overPlayer(...local(e))) {
+      setHover(false);
+      onPick?.();
+    }
+  });
 
   // Reframe when the window, the Play button or the instance list changes size.
   const resize = new ResizeObserver(() => {
@@ -320,6 +407,23 @@ function addSun(v: SkinViewer) {
 /** Stop drawing frames while the home screen is hidden. */
 export function pausePlayer(paused: boolean) {
   if (viewer) viewer.renderPaused = paused;
+  if (paused) setHover(false);
+}
+
+/**
+ * Put a skin on the player straight away (after changing outfit), without
+ * asking the core for it again. Returns the new head for the top bar.
+ */
+export async function wearSkin(id: string, png: string, slim: boolean, cape: string | null): Promise<string> {
+  const img = await loadImage(png);
+  if (viewer && shown === id) {
+    viewer.loadSkin(img, { model: slim ? "slim" : "default" });
+    if (cape) viewer.loadCape(await loadImage(cape));
+    else viewer.loadCape(null);
+  }
+  const head = headOf(img);
+  heads.set(id, head);
+  return head;
 }
 
 /**
@@ -330,6 +434,7 @@ export async function showAccount(id: string | null): Promise<string | null> {
   if (seated !== !!id) setSeated(!!id);
   if (!id) {
     if (viewer && shown !== "") viewer.loadSkin(SILHOUETTE, { model: "default" });
+    viewer?.loadCape(null);
     shown = "";
     return null;
   }
@@ -340,6 +445,7 @@ export async function showAccount(id: string | null): Promise<string | null> {
     const img = await loadImage(url);
     const model = headers.get("x-skin-model") === "slim" ? "slim" : "default";
     if (viewer) viewer.loadSkin(img, { model });
+    void showCape(id, !!headers.get("x-cape-id"));
     shown = id;
     const head = headOf(img);
     heads.set(id, head);
@@ -351,7 +457,22 @@ export async function showAccount(id: string | null): Promise<string | null> {
   }
 }
 
-function loadImage(src: string): Promise<HTMLImageElement> {
+/** Put on (or take off) the cape the account was last seen wearing. */
+async function showCape(id: string, wearing: boolean) {
+  if (!viewer) return;
+  if (!wearing) return viewer.loadCape(null);
+  try {
+    const { blob } = await apiBlob(`/accounts/${enc(id)}/cape`);
+    const url = URL.createObjectURL(blob);
+    const img = await loadImage(url);
+    URL.revokeObjectURL(url);
+    if (viewer && shown === id) viewer.loadCape(img);
+  } catch {
+    viewer.loadCape(null);
+  }
+}
+
+export function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((ok, fail) => {
     const img = new Image();
     img.onload = () => ok(img);

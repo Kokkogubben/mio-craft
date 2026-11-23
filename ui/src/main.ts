@@ -1,5 +1,6 @@
 import { api, apiBytes, appVersion, checkUpdate, connect, enc, events, inTauri, installUpdate, mcpServerPath, openPath, openUrl } from "./api";
-import { cachedHead, initPlayer, pausePlayer, showAccount } from "./player";
+import { cachedHead, initPlayer, loadImage, onPlayerClick, pausePlayer, showAccount, wearSkin } from "./player";
+import { IdleAnimation, SkinViewer } from "skinview3d";
 import { resync, slide, slideIn } from "./slide";
 import { GLYPHS, ICON_COLORS, glyphSvg, inkFor, pictureToIcon } from "./icons";
 import { closeMenu, menuOpen, showMenu, type MenuItem } from "./menu";
@@ -428,6 +429,10 @@ function applyLook(xp: boolean) {
   } catch {}
   if (xp && !playerReady) {
     initPlayer($<HTMLCanvasElement>("#skin"), $("#player-label"));
+    onPlayerClick(() => {
+      const acc = selectedAccount();
+      if (acc) outfitModal(acc);
+    });
     playerReady = true;
     refreshPlayer();
   }
@@ -1079,7 +1084,12 @@ function onEvent(e: any) {
 
 // ---------- modals ----------
 
+/** Run when the open modal closes or is replaced (to stop a 3D preview, say). */
+let modalCleanup: (() => void) | null = null;
+
 function openModal(html: string, onMount?: (root: HTMLElement) => void) {
+  modalCleanup?.();
+  modalCleanup = null;
   const root = $("#modal-root");
   root.innerHTML = `<div class="backdrop" data-action="close-modal"></div><div class="modal" role="dialog" aria-modal="true">${html}</div>`;
   root.classList.add("show");
@@ -1087,6 +1097,8 @@ function openModal(html: string, onMount?: (root: HTMLElement) => void) {
 }
 
 function closeModal() {
+  modalCleanup?.();
+  modalCleanup = null;
   const root = $("#modal-root");
   root.classList.remove("show");
   root.innerHTML = "";
@@ -1497,6 +1509,402 @@ async function loginModal() {
   }
 }
 
+// ---------- outfit: skin and cape ----------
+
+type Outfit = { skin: string; slim: boolean; capes: { id: string; alias: string; active: boolean; png: string }[] };
+type SavedSkin = { id: string; name: string; slim: boolean; png: string };
+
+const png64 = (b64: string) => `data:image/png;base64,${b64}`;
+
+/** The front of a skin, flat, as a data URL (for the skin tiles). */
+function skinFront(img: HTMLImageElement, slim: boolean): string {
+  const k = img.width / 64;
+  const legacy = img.height * 2 === img.width;
+  const c = document.createElement("canvas");
+  c.width = 16 * 3;
+  c.height = 32 * 3;
+  const g = c.getContext("2d")!;
+  g.imageSmoothingEnabled = false;
+  g.scale(3, 3);
+  const aw = slim ? 3 : 4;
+  const part = (sx: number, sy: number, w: number, h: number, dx: number, dy: number, mirror = false) => {
+    g.save();
+    if (mirror) {
+      g.translate(dx * 2 + w, 0);
+      g.scale(-1, 1);
+    }
+    g.drawImage(img, sx * k, sy * k, w * k, h * k, dx, dy, w, h);
+    g.restore();
+  };
+  // The base layer, then (64×64 skins only) the overlay on top.
+  for (const over of legacy ? [false] : [false, true]) {
+    part(over ? 40 : 8, 8, 8, 8, 4, 0); // head
+    part(20, over ? 36 : 20, 8, 12, 4, 8); // body
+    part(44, over ? 36 : 20, aw, 12, 4 - aw, 8); // right arm, on the viewer's left
+    if (legacy) part(44, 20, aw, 12, 12, 8, true);
+    else part(over ? 52 : 36, 52, aw, 12, 12, 8); // left arm
+    part(4, over ? 36 : 20, 4, 12, 4, 20); // right leg
+    if (legacy) part(4, 20, 4, 12, 8, 20, true);
+    else part(over ? 4 : 20, 52, 4, 12, 8, 20); // left leg
+  }
+  return c.toDataURL();
+}
+
+/** The outside of a cape, flat, as a data URL. */
+function capeFront(img: HTMLImageElement): string {
+  const k = img.width / 64;
+  const c = document.createElement("canvas");
+  c.width = 10 * 4;
+  c.height = 16 * 4;
+  const g = c.getContext("2d")!;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(img, 1 * k, 1 * k, 10 * k, 16 * k, 0, 0, c.width, c.height);
+  return c.toDataURL();
+}
+
+/** Guess the thin-armed model: the outer columns of the right arm are empty. */
+function looksSlim(img: HTMLImageElement): boolean {
+  if (img.height !== img.width) return false;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d", { willReadFrequently: true })!;
+  g.drawImage(img, 0, 0, 64, 64);
+  const d = g.getImageData(54, 20, 2, 12).data;
+  for (let i = 3; i < d.length; i += 4) if (d[i] !== 0) return false;
+  return true;
+}
+
+/** Change the account's skin and cape, with a 3D preview and a library of saved skins. */
+function outfitModal(acc: Account) {
+  type Pick = { png: string; slim: boolean; key: string };
+  let orig: { png: string; slim: boolean; cape: string | null } | null = null;
+  let pick: Pick | null = null;
+  let cape: string | null = null;
+  let capes: Outfit["capes"] = [];
+  let library: SavedSkin[] = [];
+  let upload: Pick | null = null;
+  let busy = false;
+  const thumbs = new Map<string, string>();
+
+  openModal(
+    `
+    <h2>Change outfit <span class="muted small">${esc(acc.name)}</span></h2>
+    <div class="outfit">
+      <div class="of-left">
+        <div class="of-view"><canvas id="of-canvas" class="loading"></canvas><span class="of-hint muted small">Drag to turn</span></div>
+        <div class="seg of-model" id="of-model"><button data-v="classic">Classic arms</button><button data-v="slim">Slim arms</button></div>
+        <button class="btn small ghost" id="of-keep" hidden>Save to library</button>
+      </div>
+      <div class="of-right">
+        <h3>Skin</h3>
+        <div class="of-grid" id="of-skins">${'<span class="of-tile skel"></span>'.repeat(4)}</div>
+        <input type="file" id="of-file" accept="image/png" hidden/>
+        <h3>Cape</h3>
+        <div class="of-grid capes" id="of-capes">${'<span class="of-tile cape skel"></span>'.repeat(3)}</div>
+        <p class="muted small">When you change skin, the old one stays in this list. In game, the new outfit shows the next time you start Minecraft.</p>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost small" id="of-reset" title="Wear one of Minecraft's default skins" disabled>Use a default skin</button>
+      <span class="grow"></span>
+      <button class="btn ghost" data-action="close-modal">Cancel</button>
+      <button class="btn primary" id="of-save" disabled>Save outfit</button>
+    </div>`,
+    (m) => m.classList.add("outfit-modal"),
+  );
+
+  // ---- 3D preview ----
+  const canvas = $<HTMLCanvasElement>("#of-canvas");
+  const box = canvas.parentElement!;
+  const viewer = new SkinViewer({ canvas, width: box.clientWidth || 220, height: box.clientHeight || 300, fov: 40, zoom: 0.85 });
+  viewer.controls.enableZoom = false;
+  viewer.controls.enablePan = false;
+  viewer.animation = new IdleAnimation();
+  // Turn towards the front for skins and the back for capes.
+  let turnTo = 0.5;
+  let raf = 0;
+  const turn = () => {
+    const r = viewer.playerObject.rotation;
+    r.y += (turnTo - r.y) * 0.12;
+    raf = Math.abs(turnTo - r.y) > 0.002 ? requestAnimationFrame(turn) : 0;
+  };
+  const face = (y: number) => {
+    turnTo = y;
+    if (!raf) raf = requestAnimationFrame(turn);
+  };
+  viewer.playerObject.rotation.y = 0.5;
+  modalCleanup = () => {
+    cancelAnimationFrame(raf);
+    viewer.dispose();
+  };
+
+  const capePng = (id: string | null) => capes.find((c) => c.id === id)?.png ?? "";
+
+  const show = () => {
+    if (!pick) return;
+    viewer.loadSkin(pick.png, { model: pick.slim ? "slim" : "default" });
+    const cp = capePng(cape);
+    if (cp) viewer.loadCape(png64(cp));
+    else viewer.loadCape(null);
+    canvas.classList.remove("loading");
+  };
+
+  const changed = () => !!orig && !!pick && (pick.png !== orig.png || pick.slim !== orig.slim || cape !== orig.cape);
+
+  const render = () => {
+    if (!pick || !orig) return;
+    const p = pick;
+    document.querySelectorAll<HTMLButtonElement>("#of-model button").forEach((b) => b.classList.toggle("on", (b.dataset.v === "slim") === p.slim));
+    const tile = (key: string, slim: boolean, name: string, extra = "") => {
+      const t = thumbs.get(`${key}:${slim}`) ?? "";
+      return `<button class="of-tile ${p.key === key ? "on" : ""}" data-skin="${esc(key)}" title="${esc(name)}">
+        ${t ? `<img src="${t}" alt=""/>` : '<span class="of-blank"></span>'}
+        <span class="of-name">${esc(name)}</span>${extra}
+      </button>`;
+    };
+    // The skin being worn is already the first tile.
+    const wearing = orig.png.slice("data:image/png;base64,".length);
+    const lib = library
+      .filter((l) => l.png !== wearing)
+      .map((l) => tile(l.id, l.slim, l.name, `<span class="of-del" data-del="${esc(l.id)}" title="Delete from the library" role="button">×</span>`));
+    $("#of-skins").innerHTML =
+      tile("current", orig.slim, "Wearing now") +
+      (upload ? tile("upload", upload.slim, "New skin") : "") +
+      lib.join("") +
+      `<button class="of-tile add" id="of-upload" title="Choose a 64×64 PNG skin"><span class="of-plus">+</span><span class="of-name">Upload…</span></button>`;
+    $("#of-capes").innerHTML =
+      `<button class="of-tile cape ${cape === null ? "on" : ""}" data-cape=""><span class="of-blank none"></span><span class="of-name">No cape</span></button>` +
+      capes
+        .map((c) => {
+          const t = thumbs.get(`cape:${c.id}`);
+          return `<button class="of-tile cape ${cape === c.id ? "on" : ""}" data-cape="${esc(c.id)}" title="${esc(c.alias)}">${t ? `<img src="${t}" alt=""/>` : '<span class="of-blank"></span>'}<span class="of-name">${esc(c.alias)}</span></button>`;
+        })
+        .join("") +
+      (capes.length ? "" : '<span class="muted small of-nocapes">This account has no capes.</span>');
+    // Offer to keep a new or worn skin that isn't in the library yet.
+    const saved = p.key !== "upload" && p.key !== "current" ? true : library.some((l) => png64(l.png) === p.png);
+    $<HTMLButtonElement>("#of-keep").hidden = saved;
+    $<HTMLButtonElement>("#of-save").disabled = busy || !changed();
+    $<HTMLButtonElement>("#of-reset").disabled = busy;
+  };
+
+  /** Flat pictures for the tiles, made once per skin and model. */
+  const makeThumbs = async () => {
+    const want: [string, string, boolean][] = [];
+    if (orig) want.push(["current", orig.png, orig.slim]);
+    if (upload) want.push(["upload", upload.png, upload.slim]);
+    library.forEach((l) => want.push([l.id, png64(l.png), l.slim]));
+    if (pick) want.push([pick.key, pick.png, pick.slim]);
+    for (const [key, src, slim] of want) {
+      if (thumbs.has(`${key}:${slim}`)) continue;
+      try {
+        thumbs.set(`${key}:${slim}`, skinFront(await loadImage(src), slim));
+      } catch {}
+    }
+    for (const c of capes) {
+      if (thumbs.has(`cape:${c.id}`) || !c.png) continue;
+      try {
+        thumbs.set(`cape:${c.id}`, capeFront(await loadImage(png64(c.png))));
+      } catch {}
+    }
+    if (canvas.isConnected) render();
+  };
+
+  const apply = (o: Outfit) => {
+    capes = o.capes;
+    const active = o.capes.find((c) => c.active)?.id ?? null;
+    orig = { png: png64(o.skin), slim: o.slim, cape: active };
+    pick = { png: orig.png, slim: orig.slim, key: "current" };
+    cape = active;
+    upload = null;
+    thumbs.delete("current:true");
+    thumbs.delete("current:false");
+  };
+
+  const loadLibrary = () =>
+    api<SavedSkin[]>("GET", "/skins")
+      .then((l) => (library = l))
+      .catch(() => (library = []));
+
+  Promise.all([api<Outfit>("GET", `/accounts/${enc(acc.id)}/outfit`), loadLibrary()])
+    .then(([o]) => {
+      if (!canvas.isConnected) return;
+      apply(o);
+      show();
+      render();
+      void makeThumbs();
+    })
+    .catch((e) => {
+      if (!canvas.isConnected) return;
+      $("#of-skins").innerHTML = `<p class="err-line small">${esc((e as Error).message)}</p>`;
+      $("#of-capes").innerHTML = "";
+    });
+
+  const pickSkin = (p: Pick) => {
+    pick = p;
+    face(0.5);
+    show();
+    render();
+    void makeThumbs();
+  };
+
+  const m = $(".outfit-modal");
+  m.addEventListener("click", async (ev) => {
+    const t = ev.target as HTMLElement;
+    const del = t.closest<HTMLElement>("[data-del]");
+    if (del) {
+      ev.stopPropagation();
+      // The first click asks, the second deletes.
+      if (del.dataset.armed !== "1") {
+        del.dataset.armed = "1";
+        del.textContent = "Delete?";
+        del.classList.add("armed");
+        return;
+      }
+      const id = del.dataset.del!;
+      try {
+        await api("DELETE", `/skins/${enc(id)}`);
+        library = library.filter((l) => l.id !== id);
+        if (pick?.key === id && orig) pick = { png: orig.png, slim: orig.slim, key: "current" };
+        show();
+        render();
+      } catch (e) {
+        toast((e as Error).message, "err");
+      }
+      return;
+    }
+    const skin = t.closest<HTMLElement>("[data-skin]");
+    if (skin && orig) {
+      const k = skin.dataset.skin!;
+      if (k === "current") pickSkin({ png: orig.png, slim: orig.slim, key: k });
+      else if (k === "upload" && upload) pickSkin(upload);
+      else {
+        const l = library.find((x) => x.id === k);
+        if (l) pickSkin({ png: png64(l.png), slim: l.slim, key: l.id });
+      }
+      return;
+    }
+    const cp = t.closest<HTMLElement>("[data-cape]");
+    if (cp && pick) {
+      cape = cp.dataset.cape || null;
+      face(cape ? Math.PI + 0.5 : 0.5);
+      show();
+      render();
+      return;
+    }
+    if (t.closest("#of-upload")) $<HTMLInputElement>("#of-file").click();
+  });
+
+  $("#of-model").addEventListener("click", (ev) => {
+    const b = (ev.target as HTMLElement).closest<HTMLButtonElement>("button");
+    if (!b || !pick) return;
+    pick = { ...pick, slim: b.dataset.v === "slim" };
+    if (pick.key === "upload" && upload) upload = { ...upload, slim: pick.slim };
+    face(0.5);
+    show();
+    render();
+    void makeThumbs();
+  });
+
+  $<HTMLInputElement>("#of-file").addEventListener("change", async (ev) => {
+    const input = ev.target as HTMLInputElement;
+    const f = input.files?.[0];
+    input.value = "";
+    if (!f) return;
+    const url = await new Promise<string>((ok, fail) => {
+      const r = new FileReader();
+      r.onload = () => ok(r.result as string);
+      r.onerror = () => fail(r.error);
+      r.readAsDataURL(f);
+    });
+    if (!url.startsWith("data:image/png")) return toast("A skin has to be a PNG image", "err");
+    let img: HTMLImageElement;
+    try {
+      img = await loadImage(url);
+    } catch {
+      return toast("That file isn't a PNG image", "err");
+    }
+    if (img.width !== 64 || (img.height !== 64 && img.height !== 32)) {
+      return toast(`A skin has to be 64×64 pixels (or the old 64×32), but this image is ${img.width}×${img.height}`, "err");
+    }
+    upload = { png: url, slim: looksSlim(img), key: "upload" };
+    thumbs.delete("upload:true");
+    thumbs.delete("upload:false");
+    pickSkin(upload);
+  });
+
+  const bytes = async (dataUrl: string) => (await fetch(dataUrl)).arrayBuffer();
+
+  $("#of-keep").addEventListener("click", async () => {
+    if (!pick) return;
+    const name = pick.key === "upload" ? "New skin" : "Saved skin";
+    try {
+      const saved = await apiBytes<SavedSkin>(`/skins?model=${pick.slim ? "slim" : "classic"}&name=${enc(name)}`, await bytes(pick.png));
+      await loadLibrary();
+      if (pick.key === "upload") {
+        pick = { ...pick, key: saved.id };
+        upload = null;
+      }
+      toast("Saved to your skin library");
+      render();
+      void makeThumbs();
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  });
+
+  /** After a change: show it on the home screen and in the top bar. */
+  const finish = async (o: Outfit, msg: string) => {
+    apply(o);
+    await loadLibrary();
+    const worn = o.capes.find((c) => c.active && c.png);
+    await wearSkin(acc.id, png64(o.skin), o.slim, worn ? png64(worn.png) : null);
+    renderTopbar();
+    renderSidebar();
+    toast(msg);
+  };
+
+  $("#of-save").addEventListener("click", async () => {
+    if (!pick || !orig || busy) return;
+    const save = $<HTMLButtonElement>("#of-save");
+    busy = true;
+    save.textContent = "Saving…";
+    render();
+    try {
+      let o: Outfit | null = null;
+      if (pick.png !== orig.png || pick.slim !== orig.slim) {
+        o = await apiBytes<Outfit>(`/accounts/${enc(acc.id)}/skin?model=${pick.slim ? "slim" : "classic"}`, await bytes(pick.png));
+      }
+      if (cape !== orig.cape) o = await api<Outfit>("PUT", `/accounts/${enc(acc.id)}/cape`, { cape_id: cape });
+      if (o) await finish(o, "Outfit changed");
+      closeModal();
+    } catch (e) {
+      busy = false;
+      save.textContent = "Save outfit";
+      render();
+      toast((e as Error).message, "err");
+    }
+  });
+
+  $("#of-reset").addEventListener("click", async () => {
+    if (busy) return;
+    busy = true;
+    render();
+    try {
+      const o = await api<Outfit>("DELETE", `/accounts/${enc(acc.id)}/skin`);
+      await finish(o, "Now wearing a default skin. Your old one is in the list.");
+      busy = false;
+      show();
+      render();
+      void makeThumbs();
+    } catch (e) {
+      busy = false;
+      render();
+      toast((e as Error).message, "err");
+    }
+  });
+}
+
 function accountsModal() {
   openModal(`
     <h2>Accounts</h2>
@@ -1506,6 +1914,7 @@ function accountsModal() {
           (a) => `<div class="acc-row">
             ${headImg(a, 28)}
             <span class="grow">${esc(a.name)}${a.selected ? ' <span class="badge ok">In use</span>' : ""}</span>
+            <button class="btn small ghost" data-action="outfit" data-id="${esc(a.id)}" title="Change skin and cape">Outfit</button>
             ${a.selected ? "" : `<button class="btn small ghost" data-action="use-account" data-id="${esc(a.id)}">Use</button>`}
             <button class="btn small ghost" data-action="remove-account" data-id="${esc(a.id)}">Remove</button>
           </div>`,
@@ -2176,6 +2585,11 @@ document.addEventListener("click", async (ev) => {
     case "accounts":
       accountsModal();
       break;
+    case "outfit": {
+      const acc = S.accounts.find((a) => a.id === el.dataset.id);
+      if (acc) outfitModal(acc);
+      break;
+    }
     case "use-account":
       S.cfg = await api("PATCH", "/config", { selected_account: el.dataset.id });
       await loadAccounts();

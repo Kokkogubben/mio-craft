@@ -28,6 +28,7 @@ pub mod maven;
 pub mod modpack;
 pub mod mods;
 pub mod mojang;
+pub mod outfit;
 pub mod paths;
 pub mod platform;
 pub mod process;
