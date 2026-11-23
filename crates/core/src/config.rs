@@ -24,6 +24,9 @@ pub struct Config {
     pub legacy_look: bool,
     /// Use the original green and grey colours instead of the copper theme.
     pub legacy_colors: bool,
+    /// The pixel font and pixel-art buttons and frames of the new look. Off, the new layout keeps
+    /// the original font and plain controls.
+    pub stylized: bool,
 }
 
 impl Default for Config {
@@ -38,6 +41,7 @@ impl Default for Config {
             discord_rpc: false,
             legacy_look: false,
             legacy_colors: false,
+            stylized: true,
         }
     }
 }
@@ -67,6 +71,7 @@ pub struct ConfigPatch {
     pub discord_rpc: Option<bool>,
     pub legacy_look: Option<bool>,
     pub legacy_colors: Option<bool>,
+    pub stylized: Option<bool>,
 }
 
 impl Config {
@@ -99,6 +104,9 @@ impl Config {
         }
         if let Some(v) = p.legacy_colors {
             self.legacy_colors = v;
+        }
+        if let Some(v) = p.stylized {
+            self.stylized = v;
         }
     }
 }

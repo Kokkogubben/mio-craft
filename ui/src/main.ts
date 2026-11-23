@@ -363,6 +363,7 @@ let playerReady = false;
 
 const LEGACY_KEY = "miocraft.legacyColors";
 const LEGACY_LOOK_KEY = "miocraft.legacyLook";
+const PLAIN_KEY = "miocraft.plain";
 
 /** Switch between the copper colours and the original ones (Settings → Legacy → Legacy colors). */
 function applyColors(legacy: boolean) {
@@ -373,10 +374,20 @@ function applyColors(legacy: boolean) {
   } catch {}
 }
 
+/** The pixel font and pixel-art controls, or the original font and plain controls in the new layout
+ *  (Settings → Legacy → Stylized fonts and buttons). */
+function applyStyle(stylized: boolean) {
+  document.body.classList.toggle("plain", !stylized);
+  try {
+    localStorage.setItem(PLAIN_KEY, stylized ? "0" : "1");
+  } catch {}
+}
+
 // Paint the remembered colours and layout before the config has loaded, so neither flashes.
 try {
   if (localStorage.getItem(LEGACY_KEY) === "1") document.body.classList.add("legacy");
   if (localStorage.getItem(LEGACY_LOOK_KEY) !== "1") document.body.classList.add("xp", "v-home");
+  if (localStorage.getItem(PLAIN_KEY) === "1") document.body.classList.add("plain");
 } catch {
   document.body.classList.add("xp", "v-home");
 }
@@ -1283,6 +1294,10 @@ function renderSettings(cfg: any, info: { path: string; version: string | null; 
     <section class="settings-sec">
       <h3>Legacy</h3>
       <label class="live-opt">
+        <span class="switch"><input type="checkbox" id="set-stylized" ${cfg.stylized !== false ? "checked" : ""}/><span></span></span>
+        <span><strong>Stylized fonts and buttons</strong><span class="muted small">The pixel font and pixel-art buttons and panels. Turn it off to keep the home screen layout with MioCraft's original font and buttons.</span></span>
+      </label>
+      <label class="live-opt">
         <span class="switch"><input type="checkbox" id="set-legacy-look" ${cfg.legacy_look ? "checked" : ""}/><span></span></span>
         <span><strong>Legacy look</strong><span class="muted small">Use MioCraft's original layout, with your instances in a sidebar, instead of the home screen with your player.</span></span>
       </label>
@@ -1307,6 +1322,7 @@ function renderSettings(cfg: any, info: { path: string; version: string | null; 
   $("#set-save").addEventListener("click", async () => {
     const xp = !$<HTMLInputElement>("#set-legacy-look").checked;
     const legacy = $<HTMLInputElement>("#set-legacy").checked;
+    const stylized = $<HTMLInputElement>("#set-stylized").checked;
     try {
       S.cfg = await api("PATCH", "/config", {
         ms_client_id: $<HTMLInputElement>("#set-cid").value,
@@ -1316,9 +1332,11 @@ function renderSettings(cfg: any, info: { path: string; version: string | null; 
         discord_rpc: $<HTMLInputElement>("#set-discord").checked,
         legacy_look: !xp,
         legacy_colors: legacy,
+        stylized,
       });
       closeModal();
       applyColors(legacy);
+      applyStyle(stylized);
       if (xp !== S.xp) applyLook(xp);
       await loadAccounts();
       S.browse.instance = null;
@@ -1982,6 +2000,7 @@ async function lookForUpdate(manual: boolean) {
     const cfg = await api("GET", "/config");
     S.cfg = cfg;
     applyColors(!!cfg.legacy_colors);
+    applyStyle(cfg.stylized !== false);
     applyLook(!cfg.legacy_look);
     events(onEvent);
     await Promise.all([loadAccounts(), loadInstances()]);
