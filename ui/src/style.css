@@ -3143,3 +3143,56 @@ body.xp:not(.plain) .srv-icon {
   justify-content: space-between;
   margin-bottom: 6px;
 }
+
+/* ---------- changelogs ---------- */
+
+.modal.wide {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.cl-list {
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 8px 0 4px;
+  padding-right: 4px;
+}
+
+.cl-mod h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+
+.cl-ver + .cl-ver {
+  margin-top: 10px;
+}
+
+.cl-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+pre.cl-text {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+div.cl-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+}

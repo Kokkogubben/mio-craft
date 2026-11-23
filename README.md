@@ -59,7 +59,7 @@ MioCraft does three things:
 - **Mod list** per instance: enable/disable, delete, search (**Ctrl+F**), and a *Rebuild* button for Claude-made mods
 - **Drag and drop**: drop mod `.jar` files, shader or resource pack `.zip` files onto the window (or onto an instance in the list) to add them, or a `.mrpack` to import a modpack. Mods made for another loader get a warning
 - **Built-in shader browser**: the same browser has a **Shaders** switch that finds shader packs for the instance's Minecraft version on Modrinth and CurseForge, installs them into its `shaderpacks` folder, lists and removes installed packs, and offers to install **Iris** (the mod that loads them) if it's missing
-- **Mod updates**: check browser-installed mods for newer compatible versions and update one or all
+- **Mod updates**: check browser-installed mods for newer compatible versions, read what changed in each version (from Modrinth and CurseForge), and update one or all
 - **Modpacks**: import Modrinth `.mrpack` files (Fabric, Quilt, Forge and NeoForge) and export instances to share, with Claude's mods included
 
 **Claude Code**

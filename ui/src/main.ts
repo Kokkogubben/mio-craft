@@ -171,7 +171,7 @@ const S = {
     launcher_log: string;
     suspects: { mod_id: string; name: string; claude_project: string | null }[];
   },
-  updates: { instance: null as string | null, byFile: new Map<string, { title: string; latest: ModVersion }>(), checked: false },
+  updates: { instance: null as string | null, byFile: new Map<string, ModUpdate>(), checked: false },
   logs: new Map<string, string[]>(),
   /** Each instance's multiplayer list, once loaded. */
   servers: new Map<string, Server[]>(),
@@ -647,7 +647,7 @@ function updatesButton(inst: Instance): string {
   const n = S.updates.instance === inst.id ? S.updates.byFile.size : 0;
   if (S.busy.has("check-updates")) return '<button class="btn ghost" disabled>Checking…</button>';
   if (S.busy.has("update-all")) return '<button class="btn primary" disabled>Updating…</button>';
-  if (n > 0) return `<button class="btn primary" data-action="update-all">Update all (${n})</button>`;
+  if (n > 0) return `<button class="btn primary" data-action="review-updates" title="See what's new, then update">Update all (${n})</button>`;
   if (S.updates.instance === inst.id && S.updates.checked) return '<button class="btn ghost" data-action="check-updates" title="Check again">Up to date ✓</button>';
   return '<button class="btn ghost" data-action="check-updates">Check for updates</button>';
 }
@@ -656,11 +656,80 @@ async function checkUpdates() {
   const inst = current();
   if (!inst) return;
   await busy("check-updates", async () => {
-    const r = await api<{ updates: { file_name: string; title: string; latest: ModVersion }[]; warnings: string[] }>("GET", `/instances/${enc(inst.id)}/updates`);
+    const r = await api<{ updates: ModUpdate[]; warnings: string[] }>("GET", `/instances/${enc(inst.id)}/updates`);
     S.updates = { instance: inst.id, byFile: new Map(r.updates.map((u) => [u.file_name, u])), checked: true };
     r.warnings.forEach((w) => toast(w, "err"));
     if (!r.updates.length) toast("All browser-installed mods are up to date");
   });
+}
+
+
+type Change = { version_id: string; version_number: string; date: string; text: string | null };
+type ModUpdate = { file_name: string; title: string; source: Source; project_id: string; latest: ModVersion; changes: Change[] };
+
+/** CurseForge changelogs already fetched, by "project/file". */
+const cfChangelogs = new Map<string, string>();
+
+function changeHtml(u: ModUpdate, c: Change): string {
+  const text = c.text ?? cfChangelogs.get(`${u.project_id}/${c.version_id}`);
+  const date = c.date ? new Date(c.date).toLocaleDateString() : "";
+  return `
+    <div class="cl-ver">
+      <div class="cl-head"><strong>${esc(c.version_number)}</strong>${date ? `<span class="muted small">${esc(date)}</span>` : ""}</div>
+      ${
+        text === undefined
+          ? `<div class="cl-text" data-cf="${esc(u.project_id)}/${esc(c.version_id)}"><span class="skel-line" style="width:70%"></span><span class="skel-line" style="width:45%"></span></div>`
+          : text
+            ? `<pre class="cl-text">${esc(text)}</pre>`
+            : '<p class="muted small cl-text">No changelog for this version.</p>'
+      }
+    </div>`;
+}
+
+/** Show what an update brings before installing it. With one file, just that mod; otherwise all of them. */
+function updatesModal(file?: string) {
+  const all = [...S.updates.byFile.values()] as ModUpdate[];
+  const list = file ? all.filter((u) => u.file_name === file) : all;
+  if (!list.length) return;
+  const files = list.map((u) => u.file_name);
+  openModal(
+    `
+    <h2>${file ? `What's new in ${esc(list[0].title)}` : `${list.length} mod update${list.length === 1 ? "" : "s"}`}</h2>
+    <div class="cl-list">
+      ${list
+        .map(
+          (u) => `
+        <section class="cl-mod">
+          ${file ? "" : `<h3>${esc(u.title)} <span class="muted small">→ ${esc(u.latest.version_number)}</span></h3>`}
+          ${u.changes.length ? u.changes.map((c) => changeHtml(u, c)).join("") : '<p class="muted small">No changelog for this update.</p>'}
+          ${u.changes.length >= 8 ? '<p class="muted small">Older versions are left out.</p>' : ""}
+        </section>`,
+        )
+        .join("")}
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" data-action="close-modal">Cancel</button>
+      <button class="btn primary" id="cl-go">${file ? `Update to ${esc(shortVer(list[0].latest.version_number))}` : `Update all (${list.length})`}</button>
+    </div>`,
+    (root) => {
+      root.classList.add("wide");
+      root.querySelector("#cl-go")!.addEventListener("click", () => {
+        closeModal();
+        applyUpdates(file ? files : undefined);
+      });
+      // CurseForge sends changelogs one at a time: fetch the ones on screen.
+      root.querySelectorAll<HTMLElement>(".cl-text[data-cf]").forEach((el) => {
+        const key = el.dataset.cf!;
+        const [mod, fileId] = key.split("/");
+        api<{ text: string }>("GET", `/changelog/curseforge/${enc(mod)}/${enc(fileId)}`)
+          .then((r) => {
+            cfChangelogs.set(key, r.text);
+            el.outerHTML = r.text ? `<pre class="cl-text">${esc(r.text)}</pre>` : '<p class="muted small cl-text">No changelog for this version.</p>';
+          })
+          .catch((e) => (el.outerHTML = `<p class="muted small cl-text">Couldn't load the changelog: ${esc((e as Error).message)}</p>`));
+      });
+    },
+  );
 }
 
 async function applyUpdates(files?: string[]) {
@@ -708,6 +777,7 @@ function modsTab(inst: Instance): string {
           <div class="mod-file">${esc(m.file_name)} · ${fmtSize(m.size)}</div>
         </div>
         <div class="mod-actions">
+          ${updateFor(inst, m) ? `<button class="btn ghost small" data-action="whats-new" data-file="${esc(m.file_name)}">What's new</button>` : ""}
           ${updateFor(inst, m) ? `<button class="btn small update" data-action="update-one" data-file="${esc(m.file_name)}" ${S.busy.has(`update:${m.file_name}`) || S.busy.has("update-all") ? "disabled" : ""} title="Update to ${esc(updateFor(inst, m)!.latest.version_number)}">${S.busy.has(`update:${m.file_name}`) ? "Updating…" : `Update → ${esc(shortVer(updateFor(inst, m)!.latest.version_number))}`}</button>` : ""}
           ${proj ? `<button class="btn small" data-action="rebuild" data-project="${esc(proj)}" ${building ? "disabled" : ""}>${building ? "Building…" : "Rebuild"}</button>` : ""}
           <button class="icon-btn" data-action="delete-mod" data-file="${esc(m.file_name)}" title="Delete" aria-label="Delete mod">
@@ -3293,6 +3363,12 @@ document.addEventListener("click", async (ev) => {
       break;
     case "update-all":
       applyUpdates();
+      break;
+    case "review-updates":
+      updatesModal();
+      break;
+    case "whats-new":
+      updatesModal(el.dataset.file!.replace(/\.disabled$/, ""));
       break;
     case "update-one":
       applyUpdates([el.dataset.file!.replace(/\.disabled$/, "")]);

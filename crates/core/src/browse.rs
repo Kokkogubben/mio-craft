@@ -127,6 +127,9 @@ pub struct ModVersion {
     pub channel: String,
     pub file: ModFile,
     pub dependencies: Vec<Dependency>,
+    /// Modrinth's changelog for this version. Not sent with version lists; updates carry it as `changes`.
+    #[serde(skip)]
+    pub changelog: Option<String>,
 }
 
 /// What we remember about mods installed from the browser:
@@ -282,6 +285,7 @@ pub fn parse_modrinth_versions(v: &Value, project_id: &str) -> Vec<ModVersion> {
                     sha1: f["hashes"]["sha1"].as_str().map(String::from),
                     size: f["size"].as_u64().unwrap_or(0),
                 },
+                changelog: ver["changelog"].as_str().map(String::from),
                 dependencies: ver["dependencies"]
                     .as_array()
                     .map(|d| {
@@ -404,6 +408,7 @@ pub fn parse_cf_files(v: &Value, project_id: &str) -> Vec<ModVersion> {
                     sha1,
                     size: f["fileLength"].as_u64().unwrap_or(0),
                 },
+                changelog: None,
                 dependencies: f["dependencies"]
                     .as_array()
                     .map(|d| {
@@ -737,6 +742,8 @@ pub struct UpdateInfo {
     pub project_id: String,
     pub current_version_id: String,
     pub latest: ModVersion,
+    /// What changed, newest first.
+    pub changes: Vec<Change>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -808,6 +815,7 @@ pub async fn check_updates(l: &Launcher, instance_id: &str) -> Result<UpdateChec
                         source: tag.source,
                         project_id: tag.project_id.clone(),
                         current_version_id: tag.version_id.clone(),
+                        changes: changes_between(&vs, &tag.version_id, n),
                         latest: n.clone(),
                     });
                 }
@@ -867,6 +875,191 @@ pub async fn apply_updates(l: &Launcher, instance_id: &str, files: Option<Vec<St
     }
     l.emit(Event::ModsChanged { instance_id: instance_id.into() });
     Ok(report)
+}
+
+// ---------- changelogs ----------
+
+/// What changed in one version, as plain text.
+#[derive(Debug, Clone, Serialize)]
+pub struct Change {
+    pub version_id: String,
+    pub version_number: String,
+    pub date: String,
+    /// None: not loaded yet (CurseForge sends changelogs one at a time; see `curseforge_changelog`).
+    pub text: Option<String>,
+}
+
+/// At most this many versions' changelogs per update, newest first.
+const MAX_CHANGES: usize = 8;
+/// Longer changelogs are cut here.
+const MAX_CHANGELOG: usize = 4000;
+
+/// The versions an update brings: from the newest one offered down to the one installed (not included).
+pub fn changes_between(versions: &[ModVersion], current: &str, latest: &ModVersion) -> Vec<Change> {
+    let start = versions.iter().position(|v| v.version_id == latest.version_id).unwrap_or(0);
+    let end = versions.iter().position(|v| v.version_id == current).filter(|&e| e > start).unwrap_or(start + 1).min(versions.len());
+    versions
+        .get(start..end)
+        .unwrap_or_default()
+        .iter()
+        .take(MAX_CHANGES)
+        .map(|v| Change {
+            version_id: v.version_id.clone(),
+            version_number: v.version_number.clone(),
+            date: v.date.clone(),
+            text: match v.source {
+                Source::Modrinth => Some(v.changelog.as_deref().map(|t| plain_text(t, false)).unwrap_or_default()),
+                Source::Curseforge => None,
+            },
+        })
+        .collect()
+}
+
+/// One CurseForge file's changelog, as plain text.
+pub async fn curseforge_changelog(l: &Launcher, mod_id: &str, file_id: &str) -> Result<String> {
+    let (Ok(m), Ok(f)) = (mod_id.parse::<u64>(), file_id.parse::<u64>()) else {
+        bail!("CurseForge ids are numbers");
+    };
+    let v = cf_get(l, &format!("/mods/{m}/files/{f}/changelog")).await?;
+    Ok(plain_text(v["data"].as_str().unwrap_or_default(), true))
+}
+
+/// Decode `&amp;`, `&#39;`, `&#x27;` and the like.
+fn decode_entities(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        rest = &rest[i..];
+        let decoded = rest[1..].char_indices().take(11).find(|&(_, c)| c == ';').map(|(end, _)| end).and_then(|end| {
+            let name = &rest[1..1 + end];
+            let c = match name {
+                "amp" => Some('&'),
+                "lt" => Some('<'),
+                "gt" => Some('>'),
+                "quot" => Some('"'),
+                "apos" => Some('\''),
+                "nbsp" => Some(' '),
+                _ => name
+                    .strip_prefix("#x")
+                    .or_else(|| name.strip_prefix("#X"))
+                    .map(|h| u32::from_str_radix(h, 16).ok())
+                    .unwrap_or_else(|| name.strip_prefix('#').and_then(|d| d.parse().ok()))
+                    .and_then(char::from_u32),
+            }?;
+            Some((c, end + 2))
+        });
+        match decoded {
+            Some((c, len)) => {
+                out.push(c);
+                rest = &rest[len..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Markdown links and images (`[text](url)`, `![alt](url)`) become their text.
+fn unlink(line: &str) -> String {
+    let mut out = String::new();
+    let mut rest = line;
+    while let Some(i) = rest.find('[') {
+        let Some(close) = rest[i..].find("](") else { break };
+        let Some(paren) = rest[i + close..].find(')') else { break };
+        let before = rest[..i].strip_suffix('!').unwrap_or(&rest[..i]);
+        out.push_str(before);
+        out.push_str(&rest[i + 1..i + close]);
+        rest = &rest[i + close + paren + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A changelog as plain text: HTML tags dropped (block tags become line breaks), entities
+/// decoded, and Markdown's markup tidied away. The UI escapes it again; it's never shown as HTML.
+pub fn plain_text(src: &str, html: bool) -> String {
+    let mut text = String::new();
+    let mut rest = src;
+    let push_text = |out: &mut String, s: &str| {
+        if html {
+            // In HTML, line breaks and runs of spaces in the source are just spaces.
+            let mut last_space = out.ends_with([' ', '\n']);
+            for c in s.chars() {
+                if c.is_whitespace() {
+                    if !last_space {
+                        out.push(' ');
+                    }
+                    last_space = true;
+                } else {
+                    out.push(c);
+                    last_space = false;
+                }
+            }
+        } else {
+            out.push_str(s);
+        }
+    };
+    while let Some(i) = rest.find('<') {
+        push_text(&mut text, &rest[..i]);
+        let after = &rest[i + 1..];
+        let looks_like_tag = after.starts_with(|c: char| c.is_ascii_alphabetic() || c == '/' || c == '!');
+        let Some(j) = after.find('>').filter(|_| looks_like_tag) else {
+            text.push('<');
+            rest = after;
+            continue;
+        };
+        let tag = after[..j].trim().to_ascii_lowercase();
+        let closing = tag.starts_with('/');
+        let name: String = tag.trim_start_matches('/').chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+        rest = &after[j + 1..];
+        match name.as_str() {
+            "script" | "style" if !closing => {
+                let end = format!("</{name}");
+                rest = rest.to_ascii_lowercase().find(&end).map(|k| &rest[k..]).unwrap_or("");
+            }
+            "li" if !closing => text.push_str("\n• "),
+            "br" | "p" | "div" | "tr" | "ul" | "ol" | "pre" | "blockquote" | "hr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" => text.push('\n'),
+            _ => {}
+        }
+    }
+    push_text(&mut text, rest);
+    let text = decode_entities(&text);
+
+    let mut lines: Vec<String> = vec![];
+    for raw in text.lines() {
+        let line = if html { raw.trim() } else { raw.trim_end() };
+        let indent = &line[..line.len() - line.trim_start().len()];
+        let mut body = line.trim_start();
+        let hashes = body.chars().take_while(|&c| c == '#').count();
+        if (1..=6).contains(&hashes) && body[hashes..].starts_with(' ') {
+            body = body[hashes..].trim_start();
+        }
+        let bullet = ["- ", "* ", "+ "].iter().find_map(|b| body.strip_prefix(b));
+        let body = match bullet {
+            Some(b) => format!("• {b}"),
+            None => body.to_string(),
+        };
+        let body = unlink(&body).replace("**", "").replace("__", "").replace('`', "");
+        let line = format!("{indent}{body}");
+        // Keep at most one empty line in a row.
+        if line.trim().is_empty() && lines.last().is_none_or(|l| l.is_empty()) {
+            continue;
+        }
+        lines.push(if line.trim().is_empty() { String::new() } else { line });
+    }
+    while lines.last().is_some_and(|l| l.is_empty()) {
+        lines.pop();
+    }
+    let mut out = lines.join("\n");
+    if out.chars().count() > MAX_CHANGELOG {
+        out = out.chars().take(MAX_CHANGELOG).collect::<String>() + "…";
+    }
+    out
 }
 
 pub fn urlencode(s: &str) -> String {
@@ -1020,8 +1213,29 @@ mod tests {
         ModVersion {
             source: Source::Modrinth, project_id: "p".into(), version_id: id.into(), name: id.into(),
             version_number: id.into(), date: String::new(), channel: ch.into(),
-            file: ModFile { url: None, filename: format!("{id}.jar"), sha1: None, size: 0 }, dependencies: vec![],
+            file: ModFile { url: None, filename: format!("{id}.jar"), sha1: None, size: 0 }, dependencies: vec![], changelog: None,
         }
+    }
+
+    #[test]
+    fn changelogs_become_plain_text() {
+        let cf = "    <h3>Current release 1.2</h3>\n    <ul>\n  <li>\n   Fixed <b>a</b> crash &amp; a &lt;leak&gt;</li><li>Faster</li></ul><script>alert(1)</script><p>Thanks&#33; &#x2764;</p>";
+        assert_eq!(plain_text(cf, true), "Current release 1.2\n\n• Fixed a crash & a <leak>\n• Faster\n\nThanks! \u{2764}");
+        let md = "## Changes\n\n- **Bold** fix for [issue 4](https://example.org/4)\n* `code` and a < b\n\n\n\nDone <img src=x onerror=alert(1)>";
+        assert_eq!(plain_text(md, false), "Changes\n\n• Bold fix for issue 4\n• code and a < b\n\nDone");
+        assert!(plain_text(&"x".repeat(MAX_CHANGELOG + 50), false).ends_with('…'));
+        assert_eq!(decode_entities("&bogus; & &#99999999;"), "&bogus; & &#99999999;");
+    }
+
+    #[test]
+    fn changes_cover_the_versions_an_update_brings() {
+        let mut vs = vec![ver("4", "release"), ver("3", "release"), ver("2", "release"), ver("1", "release")];
+        vs[0].changelog = Some("- four".into());
+        let ids = |c: Vec<Change>| c.into_iter().map(|c| c.version_id).collect::<Vec<_>>();
+        assert_eq!(ids(changes_between(&vs, "2", &vs[0].clone())), ["4", "3"]);
+        assert_eq!(ids(changes_between(&vs, "gone", &vs[0].clone())), ["4"]);
+        assert_eq!(changes_between(&vs, "2", &vs[0].clone())[0].text.as_deref(), Some("• four"));
+        assert_eq!(changes_between(&vs, "2", &vs[0].clone())[1].text.as_deref(), Some(""));
     }
 
     #[test]

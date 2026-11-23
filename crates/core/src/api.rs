@@ -105,6 +105,7 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}/launch", post(launch_instance))
         .route("/instances/{id}/stop", post(stop_instance))
         .route("/instances/{id}/logs", get(instance_logs))
+        .route("/changelog/curseforge/{mod_id}/{file_id}", get(curseforge_changelog))
         .route("/storage/clean", post(storage_clean))
         .route("/storage/{part}", get(storage_part))
         .route("/instances/{id}/log-files", get(list_log_files))
@@ -478,6 +479,10 @@ async fn list_log_files(State(s): State<AppState>, Path(id): Path<String>) -> R<
 
 async fn read_log_file(State(s): State<AppState>, Path((id, kind, name)): Path<(String, String, String)>) -> R<logfiles::LogText> {
     Ok(Json(logfiles::read(&s.l, &id, &kind, &name).await?))
+}
+
+async fn curseforge_changelog(State(s): State<AppState>, Path((m, f)): Path<(String, String)>) -> R<serde_json::Value> {
+    Ok(Json(serde_json::json!({ "text": browse::curseforge_changelog(&s.l, &m, &f).await? })))
 }
 
 async fn storage_part(State(s): State<AppState>, Path(part): Path<String>) -> R<storage::Part> {
