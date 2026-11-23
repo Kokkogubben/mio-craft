@@ -741,6 +741,19 @@ select.input {
   appearance: auto;
 }
 
+/* The open dropdown list takes the select's background, which the stylized look
+   makes transparent, so it fell back to white under light text. */
+select option,
+select optgroup {
+  background: var(--surface);
+  color: var(--text);
+}
+
+select option:checked {
+  background: var(--accent-dark);
+  color: #fff;
+}
+
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
