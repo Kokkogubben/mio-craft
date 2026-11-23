@@ -1546,7 +1546,6 @@ body.xp .btn:hover:not(:disabled) {
 
 body.xp .btn:active:not(:disabled) {
   border-image-source: var(--ui-button-down);
-  padding: 2px 8px 2px;
 }
 
 body.xp .btn:disabled {
@@ -1557,10 +1556,6 @@ body.xp .btn.small {
   padding: 0 6px 2px;
   font-size: 12px;
   line-height: 16px;
-}
-
-body.xp .btn.small:active:not(:disabled) {
-  padding: 1px 6px 1px;
 }
 
 body.xp .btn.ghost {
@@ -1819,10 +1814,6 @@ body.xp .btn.big {
   align-items: center;
   min-width: 260px;
   padding: 6px 28px 8px;
-}
-
-body.xp .btn.big:active:not(:disabled) {
-  padding: 7px 28px 7px;
 }
 
 body.xp .play-main {
