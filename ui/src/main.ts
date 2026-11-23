@@ -1202,6 +1202,8 @@ async function openLogFile(inst: Instance, key: string) {
     resetConsole();
     C.filesFor = inst.id;
   }
+  // A file the picker doesn't know yet (a fresh crash report): list them again.
+  if (key && C.files && !C.files.some((f) => `${f.kind}/${f.name}` === key)) C.files = null;
   C.file = key;
   C.text = null;
   C.err = -1;
@@ -1368,7 +1370,11 @@ function onEvent(e: any) {
       break;
     case "process_exited":
       S.running.delete(e.source);
-      if (e.source.startsWith("game:")) S.servers.delete(e.source.slice(5));
+      if (e.source.startsWith("game:")) {
+        S.servers.delete(e.source.slice(5));
+        // The game wrote a new log (and maybe a crash report).
+        if (C.filesFor === e.source.slice(5)) C.files = null;
+      }
       if (e.source.startsWith("game:") && e.code && e.code !== 0) setTimeout(loadInstanceData, 800);
       renderSidebar();
       renderMain();
