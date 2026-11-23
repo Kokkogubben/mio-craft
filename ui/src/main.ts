@@ -717,17 +717,44 @@ function updatesModal(file?: string) {
         closeModal();
         applyUpdates(file ? files : undefined);
       });
-      // CurseForge sends changelogs one at a time: fetch the ones on screen.
-      root.querySelectorAll<HTMLElement>(".cl-text[data-cf]").forEach((el) => {
-        const key = el.dataset.cf!;
-        const [mod, fileId] = key.split("/");
-        api<{ text: string }>("GET", `/changelog/curseforge/${enc(mod)}/${enc(fileId)}`)
-          .then((r) => {
-            cfChangelogs.set(key, r.text);
-            el.outerHTML = r.text ? `<pre class="cl-text">${esc(r.text)}</pre>` : '<p class="muted small cl-text">No changelog for this version.</p>';
-          })
-          .catch((e) => (el.outerHTML = `<p class="muted small cl-text">Couldn't load the changelog: ${esc((e as Error).message)}</p>`));
-      });
+      // CurseForge sends changelogs one at a time: fetch them as they scroll into view, a few at once.
+      const queue: HTMLElement[] = [];
+      let running = 0;
+      let closed = false;
+      const next = () => {
+        while (!closed && running < 3 && queue.length) {
+          const el = queue.shift()!;
+          const key = el.dataset.cf!;
+          const [mod, fileId] = key.split("/");
+          running++;
+          api<{ text: string }>("GET", `/changelog/curseforge/${enc(mod)}/${enc(fileId)}`)
+            .then((r) => {
+              cfChangelogs.set(key, r.text);
+              el.outerHTML = r.text ? `<pre class="cl-text">${esc(r.text)}</pre>` : '<p class="muted small cl-text">No changelog for this version.</p>';
+            })
+            .catch((e) => (el.outerHTML = `<p class="muted small cl-text">Couldn't load the changelog: ${esc((e as Error).message)}</p>`))
+            .finally(() => {
+              running--;
+              next();
+            });
+        }
+      };
+      const seen = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            seen.unobserve(e.target);
+            queue.push(e.target as HTMLElement);
+          }
+          next();
+        },
+        { root: root.querySelector(".cl-list"), rootMargin: "150px" },
+      );
+      root.querySelectorAll<HTMLElement>(".cl-text[data-cf]").forEach((el) => seen.observe(el));
+      modalCleanup = () => {
+        closed = true;
+        seen.disconnect();
+      };
     },
   );
 }

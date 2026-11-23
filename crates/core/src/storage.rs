@@ -721,6 +721,23 @@ mod tests {
         }
     }
 
+    /// A folder with a file open inside (like a jar a running Java has open) isn't touched at all.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn leaves_folders_in_use_alone() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let (_dir, l) = setup().await;
+        let jar = l.paths.version_jar("1.12.2");
+        // Read sharing only, the way Java opens jars.
+        let held = std::fs::OpenOptions::new().read(true).share_mode(1).open(&jar).unwrap();
+        assert!(clean(&l, "versions", "1.12.2").await.is_err());
+        assert!(jar.exists(), "the folder was renamed or emptied while in use");
+        assert!(l.paths.version_json("1.12.2").exists(), "part of the folder was deleted");
+        drop(held);
+        clean(&l, "versions", "1.12.2").await.unwrap();
+        assert!(!l.paths.version_dir("1.12.2").exists());
+    }
+
     /// A junction inside a folder is neither counted nor followed when the folder is removed.
     #[cfg(windows)]
     #[tokio::test]
