@@ -1861,7 +1861,7 @@ function outfitModal(acc: Account) {
     await wearSkin(acc.id, png64(o.skin), o.slim, worn ? png64(worn.png) : null);
     renderTopbar();
     renderSidebar();
-    toast(msg);
+    if (msg) toast(msg);
   };
 
   $("#of-save").addEventListener("click", async () => {
@@ -1870,18 +1870,22 @@ function outfitModal(acc: Account) {
     busy = true;
     save.textContent = "Saving…";
     render();
+    const wantCape = cape;
+    const capeChanges = wantCape !== orig.cape;
     try {
-      let o: Outfit | null = null;
       if (pick.png !== orig.png || pick.slim !== orig.slim) {
-        o = await apiBytes<Outfit>(`/accounts/${enc(acc.id)}/skin?model=${pick.slim ? "slim" : "classic"}`, await bytes(pick.png));
+        // Show the new skin straight away, so a failed cape change below doesn't hide it.
+        await finish(await apiBytes<Outfit>(`/accounts/${enc(acc.id)}/skin?model=${pick.slim ? "slim" : "classic"}`, await bytes(pick.png)), capeChanges ? "" : "Outfit changed");
+        cape = wantCape;
       }
-      if (cape !== orig.cape) o = await api<Outfit>("PUT", `/accounts/${enc(acc.id)}/cape`, { cape_id: cape });
-      if (o) await finish(o, "Outfit changed");
+      if (capeChanges) await finish(await api<Outfit>("PUT", `/accounts/${enc(acc.id)}/cape`, { cape_id: wantCape }), "Outfit changed");
       closeModal();
     } catch (e) {
       busy = false;
       save.textContent = "Save outfit";
+      show();
       render();
+      void makeThumbs();
       toast((e as Error).message, "err");
     }
   });
