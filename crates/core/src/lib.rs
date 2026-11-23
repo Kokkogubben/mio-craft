@@ -24,6 +24,7 @@ pub mod launch;
 pub mod live;
 pub mod live_content;
 pub mod loaders;
+pub mod logfiles;
 pub mod maven;
 pub mod modpack;
 pub mod mods;

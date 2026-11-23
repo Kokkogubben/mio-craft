@@ -527,6 +527,7 @@ async function selectInstance(id: string) {
   if (S.selected && S.selected !== id) mainSlide = order.indexOf(id) > order.indexOf(S.selected) ? 1 : -1;
   S.selected = id;
   S.modFilter = "";
+  if (C.filesFor !== id) resetConsole();
   S.browse.instance = null;
   S.browse.hits = [];
   renderSidebar();
@@ -595,10 +596,7 @@ function renderMain() {
   }
   if (S.tab === "browse" && S.browse.instance !== inst.id && !S.browse.loading) runSearch(false);
   if (S.tab === "servers" && !S.servers.has(inst.id)) loadServers(inst.id);
-  if (S.tab === "console") {
-    const c = $("#console");
-    c.scrollTop = c.scrollHeight;
-  }
+  if (S.tab === "console") consoleMounted(inst);
   for (const [id, val] of [["mod-filter", S.modFilter], ["browse-q", S.browse.q]] as const) {
     const el = document.querySelector<HTMLInputElement>(`#${id}`);
     if (el && val && refocus === id) {
@@ -628,7 +626,7 @@ function crashBanner(inst: Instance): string {
       </div>
       <div class="crash-actions">
         <button class="btn primary claude-btn" data-action="crash-ask" ${S.busy.has("claude-open") ? "disabled" : ""}>✦ Ask Claude to fix</button>
-        ${c.report_path ? `<button class="btn ghost small" data-action="open-path" data-path="${esc(c.report_path.replace(/[\\/][^\\/]+$/, ""))}">Crash reports</button>` : `<button class="btn ghost small" data-action="tab" data-tab="console">Console</button>`}
+        ${c.report_path ? `<button class="btn ghost small" data-action="show-crash" data-name="${esc(c.report_path.replace(/^.*[\\/]/, ""))}">Show report</button><button class="btn ghost small" data-action="open-path" data-path="${esc(c.report_path.replace(/[\\/][^\\/]+$/, ""))}">Crash reports</button>` : `<button class="btn ghost small" data-action="tab" data-tab="console">Console</button>`}
         <button class="icon-btn" data-action="crash-dismiss" title="Dismiss" aria-label="Dismiss">×</button>
       </div>
     </div>`;
@@ -1088,22 +1086,233 @@ function serverModal(inst: Instance, s?: Server) {
   $<HTMLInputElement>(s ? "#sv-name" : "#sv-addr").focus();
 }
 
-function consoleTab(inst: Instance): string {
-  const sources = [`game:${inst.id}`, ...projectsFor(inst).flatMap((p) => [`build:${p.id}`, `dev:${p.id}`])];
-  const lines = sources.flatMap((s) => (S.logs.get(s) ?? []).map((l) => ({ s, l })));
-  return `
-    <div class="toolbar">
-      <span class="muted">Live output from the game, builds and test clients</span>
-      <button class="btn ghost small" data-action="clear-console">Clear</button>
-    </div>
-    <pre id="console" class="console">${lines.length ? lines.map(({ s, l }) => logLine(s, l)).join("") : '<span class="muted">Nothing yet. Press Play or build a mod.</span>'}</pre>`;
+// ---------- console: live output, older logs and crash reports ----------
+
+type LogFile = { kind: "log" | "crash" | "launcher"; name: string; size: number; modified: number };
+type ConOnly = "all" | "game" | "build" | "dev";
+
+/** What the Console tab shows. */
+const C = {
+  /** "" for live output, otherwise "kind/name" of a log file. */
+  file: "",
+  files: null as LogFile[] | null,
+  filesFor: "",
+  /** The open file's lines (null while loading). */
+  text: null as string[] | null,
+  truncated: false,
+  folder: "",
+  q: "",
+  only: "all" as ConOnly,
+  /** Which error the arrows last jumped to. */
+  err: -1,
+};
+
+/** At most this many lines are drawn; searching still covers the whole file. */
+const CON_DRAW = 20000;
+
+function resetConsole() {
+  Object.assign(C, { file: "", files: null, filesFor: "", text: null, truncated: false, folder: "", q: "", only: "all", err: -1 });
+}
+
+function lineKind(line: string): "err" | "warn" | "" {
+  return /\b(ERROR|FATAL|Exception|error:|FAILURE)\b/.test(line) ? "err" : /\bWARN\b/.test(line) ? "warn" : "";
+}
+
+function showSource(source: string): boolean {
+  return C.only === "all" || source.startsWith(`${C.only}:`);
+}
+
+function matches(line: string): boolean {
+  return !C.q || line.toLowerCase().includes(C.q.toLowerCase());
+}
+
+/** Escape a line and mark what the search found. */
+function marked(line: string): string {
+  if (!C.q) return esc(line);
+  const lower = line.toLowerCase();
+  const q = C.q.toLowerCase();
+  let out = "";
+  let at = 0;
+  for (let i = lower.indexOf(q); i !== -1; i = lower.indexOf(q, at)) {
+    out += esc(line.slice(at, i)) + `<mark>${esc(line.slice(i, i + q.length))}</mark>`;
+    at = i + q.length;
+  }
+  return out + esc(line.slice(at));
 }
 
 function logLine(source: string, line: string): string {
-  const kind = /\b(ERROR|FATAL|Exception|error:|FAILURE)\b/.test(line) ? "err" : /\bWARN\b/.test(line) ? "warn" : "";
-  const tag = source.split(":")[0];
-  return `<span class="ln ${kind}"><span class="src">${esc(tag)}</span>${esc(line)}\n</span>`;
+  const tag = source ? `<span class="src">${esc(source.split(":")[0])}</span>` : "";
+  return `<span class="ln ${lineKind(line)}">${tag}${marked(line)}\n</span>`;
 }
+
+const fileLabel = (f: LogFile) =>
+  f.kind === "launcher" ? "Last launch (launcher output)" : f.name === "latest.log" ? "latest.log (newest)" : f.name;
+
+function consoleTab(inst: Instance): string {
+  if (C.filesFor !== inst.id) {
+    resetConsole();
+    C.filesFor = inst.id;
+  }
+  if (!C.files) loadLogFiles(inst);
+  const live = !C.file;
+  const group = (kind: LogFile["kind"], label: string) => {
+    const fs = (C.files ?? []).filter((f) => f.kind === kind);
+    return fs.length
+      ? `<optgroup label="${label}">${fs.map((f) => `<option value="${esc(`${f.kind}/${f.name}`)}" ${C.file === `${f.kind}/${f.name}` ? "selected" : ""}>${esc(fileLabel(f))}</option>`).join("")}</optgroup>`
+      : "";
+  };
+  const hasProjects = projectsFor(inst).length > 0;
+  const chips: [ConOnly, string][] = [["all", "All"], ["game", "Game"], ...(hasProjects ? ([["build", "Builds"], ["dev", "Test client"]] as [ConOnly, string][]) : [])];
+  return `
+    <div class="toolbar console-bar">
+      <select id="con-file" class="input con-file" aria-label="Which log to show">
+        <option value="" ${live ? "selected" : ""}>Live output</option>
+        ${C.files ? group("log", "Game logs") + group("crash", "Crash reports") + group("launcher", "Launcher") : '<option disabled>Looking for older logs…</option>'}
+      </select>
+      ${live && chips.length > 2 ? `<div class="seg con-only">${chips.map(([v, l]) => `<button data-action="con-only" data-v="${v}" class="${C.only === v ? "on" : ""}">${l}</button>`).join("")}</div>` : ""}
+      <input id="con-q" class="input con-q" placeholder="Search the log" value="${esc(C.q)}" spellcheck="false"/>
+      <span class="con-errs" id="con-errs"></span>
+      ${live ? '<button class="btn ghost small" data-action="clear-console">Clear</button>' : C.folder ? `<button class="btn ghost small" data-action="open-path" data-path="${esc(C.folder)}">Open folder</button>` : ""}
+    </div>
+    <pre id="console" class="console"></pre>`;
+}
+
+function loadLogFiles(inst: Instance) {
+  const id = inst.id;
+  api<LogFile[]>("GET", `/instances/${enc(id)}/log-files`)
+    .then((files) => {
+      if (C.filesFor !== id) return;
+      C.files = files;
+      if (S.tab === "console" && current()?.id === id) {
+        const sel = document.querySelector<HTMLSelectElement>("#con-file");
+        // Refresh only the picker, so typing in the search box isn't interrupted.
+        if (sel) {
+          const fresh = document.createElement("div");
+          fresh.innerHTML = consoleTab(inst);
+          sel.replaceWith(fresh.querySelector("#con-file")!);
+          bindPicker(inst);
+        }
+      }
+    })
+    .catch(() => (C.files = []));
+}
+
+async function openLogFile(inst: Instance, key: string) {
+  if (C.filesFor !== inst.id) {
+    resetConsole();
+    C.filesFor = inst.id;
+  }
+  C.file = key;
+  C.text = null;
+  C.err = -1;
+  C.folder = "";
+  C.truncated = false;
+  if (S.view !== "instances") setView("instances");
+  renderMain();
+  if (!key) return;
+  const [kind, ...rest] = key.split("/");
+  try {
+    const r = await api<{ text: string; truncated: boolean; folder: string }>("GET", `/instances/${enc(inst.id)}/log-files/${enc(kind)}/${enc(rest.join("/"))}`);
+    if (C.file !== key) return;
+    C.text = r.text.split(/\r?\n/);
+    if (C.text[C.text.length - 1] === "") C.text.pop();
+    C.truncated = r.truncated;
+    C.folder = r.folder;
+  } catch (e) {
+    if (C.file !== key) return;
+    C.text = [];
+    toast((e as Error).message, "err");
+  }
+  if (S.tab === "console") renderMain();
+}
+
+/** Fill the console with the lines that pass the source filter and the search. */
+function drawConsole(inst: Instance, scroll: "end" | "keep" = "end") {
+  const c = document.querySelector<HTMLElement>("#console");
+  if (!c) return;
+  let lines: { s: string; l: string }[];
+  let empty: string;
+  if (!C.file) {
+    const sources = [`game:${inst.id}`, ...projectsFor(inst).flatMap((p) => [`build:${p.id}`, `dev:${p.id}`])].filter(showSource);
+    lines = sources.flatMap((s) => (S.logs.get(s) ?? []).map((l) => ({ s, l })));
+    empty = "Nothing yet. Press Play or build a mod. Older logs and crash reports are in the menu at the top left.";
+  } else if (!C.text) {
+    c.innerHTML = '<span class="con-empty"><span class="skel-line" style="width:60%"></span><span class="skel-line" style="width:40%"></span><span class="skel-line" style="width:52%"></span></span>';
+    updateErrors();
+    return;
+  } else {
+    lines = C.text.map((l) => ({ s: "", l }));
+    empty = "This log is empty.";
+  }
+  const found = C.q ? lines.filter(({ l }) => matches(l)) : lines;
+  const drawn = found.length > CON_DRAW ? found.slice(-CON_DRAW) : found;
+  const notes = [
+    C.truncated ? "Only the end of this log is shown, since it's very long." : "",
+    found.length > CON_DRAW ? `Showing the last ${CON_DRAW.toLocaleString()} of ${found.length.toLocaleString()} lines. Search to narrow it down.` : "",
+  ].filter(Boolean);
+  c.innerHTML = found.length
+    ? notes.map((n) => `<span class="con-note">${esc(n)}</span>`).join("") + drawn.map(({ s, l }) => logLine(s, l)).join("")
+    : `<span class="con-empty muted">${C.q ? `No lines contain “${esc(C.q)}”.` : esc(empty)}</span>`;
+  C.err = -1;
+  updateErrors();
+  if (scroll === "end") c.scrollTop = c.scrollHeight;
+}
+
+function updateErrors() {
+  const box = document.querySelector<HTMLElement>("#con-errs");
+  if (!box) return;
+  const n = document.querySelectorAll("#console .ln.err").length;
+  box.innerHTML = n
+    ? `<span class="err-n small">${n} error${n === 1 ? "" : "s"}</span>
+       <button class="icon-btn" data-action="con-err" data-dir="up" title="Previous error" aria-label="Previous error"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 15 6-6 6 6"/></svg></button>
+       <button class="icon-btn" data-action="con-err" data-dir="down" title="Next error (from the top)" aria-label="Next error"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg></button>`
+    : '<span class="muted small">No errors</span>';
+}
+
+/** Scroll to the next or previous error line. The first press goes to the first error. */
+function jumpError(dir: 1 | -1) {
+  const errs = [...document.querySelectorAll<HTMLElement>("#console .ln.err")];
+  if (!errs.length) return;
+  C.err = C.err < 0 ? (dir === 1 ? 0 : errs.length - 1) : (C.err + dir + errs.length) % errs.length;
+  const el = errs[C.err];
+  document.querySelectorAll("#console .ln.flash").forEach((x) => x.classList.remove("flash"));
+  el.classList.add("flash");
+  el.scrollIntoView({ block: "center" });
+}
+
+let conSearchTimer: number | undefined;
+
+function bindPicker(inst: Instance) {
+  document.querySelector<HTMLSelectElement>("#con-file")?.addEventListener("change", (ev) => {
+    openLogFile(inst, (ev.target as HTMLSelectElement).value);
+  });
+}
+
+function bindConsole(inst: Instance) {
+  bindPicker(inst);
+  const q = document.querySelector<HTMLInputElement>("#con-q");
+  q?.addEventListener("input", () => {
+    C.q = q.value;
+    clearTimeout(conSearchTimer);
+    conSearchTimer = window.setTimeout(() => drawConsole(inst), C.file ? 120 : 0);
+  });
+  q?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") jumpError(e.shiftKey ? -1 : 1);
+    if (e.key === "Escape" && q.value) {
+      e.stopPropagation();
+      q.value = C.q = "";
+      drawConsole(inst);
+    }
+  });
+}
+
+/** After the Console tab is drawn: fill it and hook up its controls. */
+function consoleMounted(inst: Instance | null) {
+  if (!inst) return;
+  bindConsole(inst);
+  drawConsole(inst);
+}
+
 
 // ---------- status bar ----------
 
@@ -1141,12 +1350,14 @@ function onEvent(e: any) {
       S.logs.set(e.source, arr);
       const c = document.querySelector<HTMLElement>("#console");
       const inst = current();
-      if (c && inst && (e.source === `game:${inst.id}` || projectsFor(inst).some((p) => e.source.endsWith(`:${p.id}`)))) {
+      if (c && inst && !C.file && (e.source === `game:${inst.id}` || projectsFor(inst).some((p) => e.source.endsWith(`:${p.id}`)))) {
+        if (!showSource(e.source) || !matches(e.line)) break;
         const stick = c.scrollTop + c.clientHeight >= c.scrollHeight - 30;
-        if (c.querySelector(".muted")) c.innerHTML = "";
+        if (c.querySelector(".con-empty")) c.innerHTML = "";
         c.insertAdjacentHTML("beforeend", logLine(e.source, e.line));
         while (c.childElementCount > LOG_LIMIT) c.firstElementChild?.remove();
         if (stick) c.scrollTop = c.scrollHeight;
+        if (lineKind(e.line) === "err") updateErrors();
       }
       break;
     }
@@ -2969,6 +3180,19 @@ document.addEventListener("click", async (ev) => {
     case "install-version":
       closeModal();
       installOnline(el.dataset.pid!, el.dataset.vid!);
+      break;
+    case "con-only":
+      C.only = el.dataset.v as ConOnly;
+      renderMain();
+      break;
+    case "con-err":
+      jumpError(el.dataset.dir === "up" ? -1 : 1);
+      break;
+    case "show-crash":
+      if (inst) {
+        S.tab = "console";
+        openLogFile(inst, `crash/${el.dataset.name}`);
+      }
       break;
     case "clear-console":
       if (inst) [`game:${inst.id}`, ...projectsFor(inst).flatMap((p) => [`build:${p.id}`, `dev:${p.id}`])].forEach((s) => S.logs.delete(s));

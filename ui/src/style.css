@@ -3004,3 +3004,59 @@ body.xp:not(.plain) .srv-icon {
 .toolbar .grow {
   flex: 1;
 }
+
+/* ---------- console: picker, filters, search, errors ---------- */
+
+.console-bar {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.con-file {
+  width: auto;
+  max-width: 280px;
+}
+
+.con-q {
+  flex: 1;
+  min-width: 140px;
+}
+
+.con-only button {
+  padding: 5px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.con-errs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.con-errs .err-n {
+  color: #ff8a80;
+}
+
+.con-errs .icon-btn {
+  width: 26px;
+  height: 26px;
+}
+
+.console mark {
+  background: rgba(var(--accent-rgb), 0.45);
+  color: inherit;
+  border-radius: 2px;
+}
+
+.console .ln.flash {
+  background: rgba(255, 138, 128, 0.18);
+  outline: 1px solid rgba(255, 138, 128, 0.5);
+}
+
+.con-note {
+  display: block;
+  color: var(--dim);
+  margin-bottom: 6px;
+}

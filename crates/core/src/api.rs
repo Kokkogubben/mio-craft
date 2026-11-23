@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, modpack, instances, launch, loaders, mods, mojang, outfit, process, servers, projects, scene, shaders, Launcher};
+use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, logfiles, modpack, instances, launch, loaders, mods, mojang, outfit, process, servers, projects, scene, shaders, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -105,6 +105,8 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}/launch", post(launch_instance))
         .route("/instances/{id}/stop", post(stop_instance))
         .route("/instances/{id}/logs", get(instance_logs))
+        .route("/instances/{id}/log-files", get(list_log_files))
+        .route("/instances/{id}/log-files/{kind}/{name}", get(read_log_file))
         .route("/instances/{id}/mods", get(list_mods))
         .route("/instances/{id}/mods/{file}", delete(delete_mod))
         .route("/instances/{id}/mods/{file}/enabled", post(set_mod_enabled))
@@ -466,6 +468,14 @@ async fn instance_logs(State(s): State<AppState>, Path(id): Path<String>, Query(
         .await
         .unwrap_or_else(|_| "No log yet.".into());
     Ok(Json(json!({ "path": path, "text": text })))
+}
+
+async fn list_log_files(State(s): State<AppState>, Path(id): Path<String>) -> R<Vec<logfiles::LogFile>> {
+    Ok(Json(logfiles::list(&s.l, &id).await?))
+}
+
+async fn read_log_file(State(s): State<AppState>, Path((id, kind, name)): Path<(String, String, String)>) -> R<logfiles::LogText> {
+    Ok(Json(logfiles::read(&s.l, &id, &kind, &name).await?))
 }
 
 async fn list_mods(State(s): State<AppState>, Path(id): Path<String>) -> R<Vec<mods::ModEntry>> {

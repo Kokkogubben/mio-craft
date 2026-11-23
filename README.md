@@ -46,7 +46,7 @@ MioCraft does three things:
 - **Copy game settings** between instances: keybinds (mods’ too), video, sound, accessibility, chat, skin parts and language, from another instance, the Minecraft Launcher or an `options.txt` file. Each instance keeps its other settings, keybinds are converted between the pre-1.13 and current formats, and the old file is kept as `options.txt.bak`
 - **Java downloaded automatically**: the launcher fetches the Java version each Minecraft version needs
 - **Microsoft account sign-in**, with **tokens kept in Windows Credential Manager**, not in a plain file
-- **Console** tab with the game's log, and a **crash helper**: when the game crashes, a banner shows what went wrong and which mods were involved
+- **Console** tab with the live log, older logs and crash reports, search, filters for game, build and test-client output, and jumps between errors. Plus a **crash helper**: when the game crashes, a banner shows what went wrong and which mods were involved, and opens the report
 - **First-run setup** that walks through connecting Claude Code, sign-in and CurseForge
 - **Discord status** (optional, off by default): shows the instance you're playing on your Discord profile
 - **Updates itself**: checks GitHub for a new release at startup, asks before installing, and only installs updates signed with the project's key
