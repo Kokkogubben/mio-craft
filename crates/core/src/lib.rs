@@ -25,6 +25,7 @@ pub mod live;
 pub mod live_content;
 pub mod loaders;
 pub mod logfiles;
+pub mod storage;
 pub mod maven;
 pub mod modpack;
 pub mod mods;
@@ -61,6 +62,8 @@ pub struct Inner {
     pub processes: process::ProcessTable,
     /// Serialises installs so two requests never write the same files at once.
     pub install_lock: tokio::sync::Mutex<()>,
+    /// Gradle runs in progress (builds aren't in the process table), so Storage leaves their files alone.
+    pub gradle_runs: std::sync::atomic::AtomicUsize,
 }
 
 impl std::ops::Deref for Launcher {
@@ -82,6 +85,7 @@ impl Launcher {
             config: RwLock::new(config),
             processes: process::ProcessTable::default(),
             install_lock: tokio::sync::Mutex::new(()),
+            gradle_runs: Default::default(),
         })))
     }
 

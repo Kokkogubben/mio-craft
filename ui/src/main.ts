@@ -218,6 +218,7 @@ function loaderUnsupported(loader: string, mc: string): string {
 /** Claude's mod templates exist for these loaders only. */
 
 function fmtSize(b: number): string {
+  if (b >= 1024 * 1024 * 1024) return `${(b / 1024 / 1024 / 1024).toFixed(1)} GB`;
   if (b > 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(b / 1024))} KB`;
 }
@@ -1647,16 +1648,158 @@ function loadSettingsInfo(): Promise<void> {
   return settingsInfoLoad;
 }
 
+// ---------- storage (a settings category) ----------
+// Each part is scanned on its own, so the quick ones show up while the big folders are still counted.
+
+type StorItem = { key: string; label: string; size: number; detail: string; removable: boolean; path?: string };
+type StorPart = { total: number; items: StorItem[]; note?: string };
+
+const STOR_PARTS: [string, string, string][] = [
+  ["instances", "Instances", "Worlds, mods and settings. Delete an instance from its own page."],
+  ["versions", "Minecraft versions", "Game files and mod loaders. Removed ones are downloaded again if an instance needs them."],
+  ["assets", "Game assets", "Sounds, languages and textures, shared by every instance."],
+  ["libraries", "Libraries", ""],
+  ["java", "Java", "Downloaded again when a game or a build needs it."],
+  ["gradle", "Mod project builds", "Gradle and what it downloads to build mod projects."],
+  ["other", "Other", ""],
+];
+const stor = new Map<string, StorPart>();
+let storBusy = false;
+
+function storageHtml(dataDir: string): string {
+  return `
+    <h2>Storage</h2>
+    <p class="muted small">Everything MioCraft keeps is in <button class="link" data-action="open-path" data-path="${esc(dataDir)}">its data folder</button>. Things nothing uses any more can be removed here.</p>
+    <div class="stor-total" id="stor-total"><span class="skel-line" style="width:180px"></span></div>
+    ${STOR_PARTS.map(
+      ([id, title, desc]) => `
+      <section class="settings-sec stor" id="stor-${id}">
+        <h3><span>${title}</span><span class="stor-size"></span></h3>
+        ${desc ? `<p class="muted small">${desc}</p>` : ""}
+        <div class="stor-items"><span class="skel-line" style="width:65%"></span><span class="skel-line" style="width:40%"></span></div>
+      </section>`,
+    ).join("")}`;
+}
+
+function loadStorage(only?: string) {
+  for (const [id] of STOR_PARTS) {
+    if (only && id !== only) continue;
+    api<StorPart>("GET", `/storage/${id}`)
+      .then((p) => {
+        stor.set(id, p);
+        drawStorPart(id);
+      })
+      .catch((e) => {
+        const box = document.querySelector(`#stor-${id} .stor-items`);
+        if (box) box.innerHTML = `<p class="muted small">Couldn't look: ${esc((e as Error).message)}</p>`;
+      });
+  }
+}
+
+function drawStorPart(id: string) {
+  const sec = document.querySelector<HTMLElement>(`#stor-${id}`);
+  const p = stor.get(id);
+  if (!sec || !p) return;
+  sec.querySelector(".stor-size")!.textContent = fmtSize(p.total);
+  const items = id === "instances" || id === "other" ? p.items : [...p.items].sort((a, b) => Number(b.removable) - Number(a.removable) || b.size - a.size);
+  const unused = items.filter((i) => i.removable);
+  sec.querySelector(".stor-items")!.innerHTML =
+    (p.note ? `<p class="note">${esc(p.note)}</p>` : "") +
+    (unused.length > 1 && id === "versions"
+      ? `<div class="stor-all"><span class="muted small">${unused.length} not used by any instance, ${fmtSize(unused.reduce((n, i) => n + i.size, 0))}</span><button class="btn small" data-action="stor-clean-all" data-part="${id}" ${storBusy ? "disabled" : ""}>Remove all unused</button></div>`
+      : "") +
+    (items.length
+      ? items
+          .map(
+            (i) => `
+        <div class="stor-row${i.removable ? " unused" : ""}">
+          <div class="stor-what"><strong>${esc(i.label)}</strong>${i.detail ? `<span class="muted small">${esc(i.detail)}</span>` : ""}</div>
+          <span class="stor-n">${fmtSize(i.size)}</span>
+          ${i.path ? `<button class="btn ghost small" data-action="open-path" data-path="${esc(i.path)}">Open</button>` : ""}
+          ${i.removable ? `<button class="btn ghost small danger" data-action="stor-clean" data-part="${id}" data-key="${esc(i.key)}" ${storBusy ? "disabled" : ""}>Remove</button>` : ""}
+        </div>`,
+          )
+          .join("")
+      : '<p class="muted small">Nothing here yet.</p>');
+  drawStorTotal();
+}
+
+function drawStorTotal() {
+  const box = document.querySelector<HTMLElement>("#stor-total");
+  if (!box) return;
+  const done = STOR_PARTS.filter(([id]) => stor.has(id));
+  const total = done.reduce((n, [id]) => n + stor.get(id)!.total, 0);
+  const free = done.reduce((n, [id]) => n + stor.get(id)!.items.filter((i) => i.removable).reduce((m, i) => m + i.size, 0), 0);
+  const counting = done.length < STOR_PARTS.length;
+  box.innerHTML = `<strong>${fmtSize(total)}</strong><span class="muted">${counting ? " so far, still counting…" : " in total"}</span>${free ? `<span class="stor-free">${fmtSize(free)} can be removed</span>` : ""}`;
+}
+
+/** Remove items one after another. Returns how many bytes were freed. */
+async function storClean(part: string, items: StorItem[]): Promise<number> {
+  storBusy = true;
+  STOR_PARTS.forEach(([id]) => drawStorPart(id));
+  let freed = 0;
+  try {
+    for (const i of items) {
+      const row = document.querySelector<HTMLElement>(`[data-action="stor-clean"][data-part="${part}"][data-key="${CSS.escape(i.key)}"]`);
+      if (row) row.textContent = "Removing…";
+      const r = await api<{ freed: number }>("POST", "/storage/clean", { part, key: i.key });
+      freed += r.freed;
+    }
+  } catch (e) {
+    toast((e as Error).message, "err");
+  } finally {
+    storBusy = false;
+    STOR_PARTS.forEach(([id]) => drawStorPart(id));
+    loadStorage(part);
+  }
+  if (freed) toast(`Freed ${fmtSize(freed)}`);
+  return freed;
+}
+
+async function askStorClean(part: string, key: string) {
+  const i = stor.get(part)?.items.find((x) => x.key === key);
+  if (!i || storBusy) return;
+  const again: Record<string, string> = {
+    versions: "If an instance needs it later, it's downloaded again.",
+    assets: "If an instance needs them later, they're downloaded again.",
+    java: "If a game or a build needs it later, it's downloaded again.",
+    gradle: key === "home" ? "The next mod build downloads what it needs again, which can take several minutes." : "If a mod project needs it later, it's downloaded again.",
+    other: "",
+  };
+  const ok = await ask({
+    title: `Remove ${i.label}?`,
+    body: `<p>This frees <strong>${fmtSize(i.size)}</strong>. ${again[part] ?? ""}</p>`,
+    ok: "Remove",
+    danger: true,
+  });
+  if (ok) await storClean(part, [i]);
+}
+
+async function askStorCleanAll(part: string) {
+  const items = stor.get(part)?.items.filter((i) => i.removable) ?? [];
+  if (!items.length || storBusy) return;
+  const size = items.reduce((n, i) => n + i.size, 0);
+  const ok = await ask({
+    title: `Remove ${items.length} unused versions?`,
+    body: `<p>This frees <strong>${fmtSize(size)}</strong>: ${items.map((i) => esc(i.label)).join(", ")}.</p><p class="muted small">If an instance needs one later, it's downloaded again.</p>`,
+    ok: "Remove all",
+    danger: true,
+  });
+  if (ok) await storClean(part, items);
+}
+
 // ---------- settings page ----------
 // A full-window page that slides in over everything, with categories down the side. Every change
 // saves straight away.
 
-type SetCat = "claude" | "mods" | "discord" | "legacy" | "about" | "dev";
+type SetCat = "claude" | "mods" | "discord" | "legacy" | "storage" | "about" | "dev";
 const SET_CATS: [SetCat, string][] = [
   ["claude", "✦ Claude Code"],
   ["mods", "Mod browser"],
   ["discord", "Discord"],
   ["legacy", "Legacy"],
+  ["storage", "Storage"],
   ["about", "About"],
   ["dev", "Dev"],
 ];
@@ -1721,6 +1864,10 @@ async function showSetCat(cat: SetCat, animate = true) {
     if (!settingsOpen || setCat !== cat) return;
   }
   pane.innerHTML = setCatHtml(cat, S.cfg, settingsInfo!);
+  if (cat === "storage") {
+    stor.clear();
+    loadStorage();
+  }
   if (animate) slideIn(pane, 0, 14);
 }
 
@@ -1774,6 +1921,8 @@ function setCatHtml(cat: SetCat, cfg: any, info: { path: string; version: string
           ${setSwitch("set-legacy-look", !!cfg.legacy_look, "Legacy look", "Use MioCraft's original layout, with your instances in a sidebar, instead of the home screen with your player.")}
           ${setSwitch("set-legacy", !!cfg.legacy_colors, "Legacy colors", "Use MioCraft's original green and grey instead of the copper colors.")}
         </section>`;
+    case "storage":
+      return storageHtml(status.data_dir);
     case "about":
       return `
         <h2>About</h2>
@@ -2968,6 +3117,12 @@ document.addEventListener("click", async (ev) => {
       break;
     case "close-settings":
       closeSettings();
+      break;
+    case "stor-clean":
+      askStorClean(el.dataset.part!, el.dataset.key!);
+      break;
+    case "stor-clean-all":
+      askStorCleanAll(el.dataset.part!);
       break;
     case "set-cat":
       showSetCat(el.dataset.cat as SetCat);

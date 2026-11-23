@@ -396,6 +396,7 @@ mod tests {
             config: tokio::sync::RwLock::new(Default::default()),
             processes: Default::default(),
             install_lock: tokio::sync::Mutex::new(()),
+            gradle_runs: Default::default(),
         }));
         // A placeholder token for the fake server only.
         std::fs::write(l.paths.accounts_file(), json!([{ "id": "abc", "name": "Mio", "mc_token": "fake-mc", "mc_expires_at": now() + 3600 }]).to_string()).unwrap();

@@ -47,6 +47,7 @@ MioCraft does three things:
 - **Java downloaded automatically**: the launcher fetches the Java version each Minecraft version needs
 - **Microsoft account sign-in**, with **tokens kept in Windows Credential Manager**, not in a plain file
 - **Console** tab with the live log, older logs and crash reports, search, filters for game, build and test-client output, and jumps between errors. Plus a **crash helper**: when the game crashes, a banner shows what went wrong and which mods were involved, and opens the report
+- **Storage** in Settings: how much space instances, Minecraft versions, game assets, Java and mod project builds take, and removing what nothing uses any more (always asks first, with the size)
 - **First-run setup** that walks through connecting Claude Code, sign-in and CurseForge
 - **Discord status** (optional, off by default): shows the instance you're playing on your Discord profile
 - **Updates itself**: checks GitHub for a new release at startup, asks before installing, and only installs updates signed with the project's key

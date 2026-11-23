@@ -976,6 +976,7 @@ mod tests {
             config: tokio::sync::RwLock::new(Default::default()),
             processes: Default::default(),
             install_lock: tokio::sync::Mutex::new(()),
+            gradle_runs: Default::default(),
         }));
         let inst = instances::create(&l, instances::NewInstance {
             name: Some("t".into()), mc_version: "1.21.1".into(), loader: Loader::Fabric,

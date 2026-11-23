@@ -3060,3 +3060,86 @@ body.xp:not(.plain) .srv-icon {
   color: var(--dim);
   margin-bottom: 6px;
 }
+
+/* ---------- storage ---------- */
+
+.stor-total {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 8px;
+  font-size: 15px;
+}
+
+.stor-total strong {
+  font-size: 22px;
+}
+
+.stor-free {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.stor h3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.stor-size {
+  font-size: 13px;
+  color: var(--dim);
+  font-weight: normal;
+}
+
+.stor-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.stor-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.stor-row.unused {
+  background: rgba(var(--accent-rgb), 0.07);
+}
+
+.stor-what {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stor-what strong {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stor-n {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.stor-all {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}

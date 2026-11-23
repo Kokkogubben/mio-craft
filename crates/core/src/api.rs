@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, logfiles, modpack, instances, launch, loaders, mods, mojang, outfit, process, servers, projects, scene, shaders, Launcher};
+use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, logfiles, modpack, instances, launch, loaders, mods, mojang, outfit, process, servers, projects, scene, shaders, storage, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -105,6 +105,8 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}/launch", post(launch_instance))
         .route("/instances/{id}/stop", post(stop_instance))
         .route("/instances/{id}/logs", get(instance_logs))
+        .route("/storage/clean", post(storage_clean))
+        .route("/storage/{part}", get(storage_part))
         .route("/instances/{id}/log-files", get(list_log_files))
         .route("/instances/{id}/log-files/{kind}/{name}", get(read_log_file))
         .route("/instances/{id}/mods", get(list_mods))
@@ -476,6 +478,21 @@ async fn list_log_files(State(s): State<AppState>, Path(id): Path<String>) -> R<
 
 async fn read_log_file(State(s): State<AppState>, Path((id, kind, name)): Path<(String, String, String)>) -> R<logfiles::LogText> {
     Ok(Json(logfiles::read(&s.l, &id, &kind, &name).await?))
+}
+
+async fn storage_part(State(s): State<AppState>, Path(part): Path<String>) -> R<storage::Part> {
+    Ok(Json(storage::part(&s.l, &part).await?))
+}
+
+#[derive(Deserialize)]
+struct CleanBody {
+    part: String,
+    key: String,
+}
+
+async fn storage_clean(State(s): State<AppState>, Json(b): Json<CleanBody>) -> R<serde_json::Value> {
+    let freed = storage::clean(&s.l, &b.part, &b.key).await?;
+    Ok(Json(serde_json::json!({ "freed": freed })))
 }
 
 async fn list_mods(State(s): State<AppState>, Path(id): Path<String>) -> R<Vec<mods::ModEntry>> {

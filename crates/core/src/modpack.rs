@@ -451,6 +451,7 @@ mod tests {
             config: tokio::sync::RwLock::new(Default::default()),
             processes: Default::default(),
             install_lock: tokio::sync::Mutex::new(()),
+            gradle_runs: Default::default(),
         }))
     }
 

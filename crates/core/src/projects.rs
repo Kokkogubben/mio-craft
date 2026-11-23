@@ -313,6 +313,7 @@ pub async fn build(l: &Launcher, id: &str) -> Result<BuildResult> {
 /// Run Gradle tasks, streaming output under `source`. Returns the exit status and all lines.
 pub(crate) async fn run_gradle(l: &Launcher, p: &ModProject, tasks: &[&str], source: &str) -> Result<(std::process::ExitStatus, Vec<String>)> {
     let source = source.to_string();
+    let _run = crate::storage::GradleRun::start(l);
     let mut cmd = gradle_command(l, p, tasks).await?;
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null()).kill_on_drop(true);
     process::hide_window(&mut cmd);
