@@ -2929,3 +2929,41 @@ body.xp:not(.plain) .of-tile,
 body.xp:not(.plain) .of-view {
   border-radius: 0;
 }
+
+/* ---------- ask(): yes/no questions on top of everything ---------- */
+
+.ask-backdrop {
+  z-index: 20;
+}
+
+.modal.ask {
+  z-index: 21;
+  width: min(420px, calc(100vw - 32px));
+}
+
+.modal.ask h2 {
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+
+.modal.ask p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.modal.ask code {
+  color: var(--text);
+}
+
+/* The same size as the other dialog buttons. */
+.modal.ask .btn.danger {
+  padding: 8px 14px;
+  font-size: inherit;
+}
+
+body.xp:not(.plain) .modal.ask .btn.danger {
+  padding: 1px 8px 3px;
+  font-size: 14px;
+}

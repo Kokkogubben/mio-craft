@@ -1084,6 +1084,56 @@ function onEvent(e: any) {
 
 // ---------- modals ----------
 
+/**
+ * Ask a yes/no question in the launcher's own style, on top of whatever is
+ * open (so an Edit dialog behind it keeps its changes). `body` is HTML.
+ * Resolves true for yes; Esc, Cancel and clicking outside are no.
+ */
+function ask(o: { title: string; body: string; ok: string; danger?: boolean }): Promise<boolean> {
+  return new Promise((done) => {
+    const box = document.createElement("div");
+    box.className = "ask-root";
+    box.innerHTML = `<div class="backdrop ask-backdrop"></div>
+      <div class="modal ask" role="alertdialog" aria-modal="true" aria-labelledby="ask-title" aria-describedby="ask-body">
+        <h2 id="ask-title">${esc(o.title)}</h2>
+        <p id="ask-body">${o.body}</p>
+        <div class="modal-actions">
+          <button class="btn ghost" data-ask="no">Cancel</button>
+          <button class="btn ${o.danger ? "danger" : "primary"}" data-ask="yes">${esc(o.ok)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(box);
+    const before = document.activeElement as HTMLElement | null;
+    const buttons = [...box.querySelectorAll<HTMLButtonElement>("[data-ask]")];
+    const finish = (yes: boolean) => {
+      document.removeEventListener("keydown", onKey, true);
+      box.remove();
+      before?.focus?.();
+      done(yes);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        finish(false);
+      } else if (e.key === "Tab") {
+        // Keep the focus on the two buttons.
+        e.preventDefault();
+        buttons[(buttons.indexOf(document.activeElement as HTMLButtonElement) + 1) % buttons.length].focus();
+      }
+    };
+    document.addEventListener("keydown", onKey, true);
+    box.addEventListener("click", (e) => {
+      const t = e.target as HTMLElement;
+      const a = t.closest<HTMLElement>("[data-ask]")?.dataset.ask;
+      if (a) finish(a === "yes");
+      else if (t.classList.contains("ask-backdrop")) finish(false);
+    });
+    // For something that can't be undone, Enter shouldn't do it by accident.
+    buttons[o.danger ? 0 : 1].focus();
+  });
+}
+
 /** Run when the open modal closes or is replaced (to stop a 3D preview, say). */
 let modalCleanup: (() => void) | null = null;
 
@@ -2039,7 +2089,17 @@ async function instanceModal(inst: Instance) {
             unfreeze_registries: chk("unfreeze_registries"),
             slot_count: Number($<HTMLInputElement>("#lv-slot_count").value) || 64,
           };
-      if (live?.unfreeze_registries && !L.unfreeze_registries && !confirm("Unfreezing registries is experimental and can crash the game or corrupt a world. Back up worlds you care about. Turn it on?")) return;
+      if (
+        live?.unfreeze_registries &&
+        !L.unfreeze_registries &&
+        !(await ask({
+          title: "Unfreeze registries?",
+          body: "This is experimental and can crash the game or corrupt a world. Back up worlds you care about first.",
+          ok: "Turn it on",
+          danger: true,
+        }))
+      )
+        return;
       await api("PATCH", `/instances/${enc(inst.id)}`, {
         name: $<HTMLInputElement>("#ie-name").value,
         ram_mb: ram ? Number(ram) : undefined,
@@ -2157,7 +2217,13 @@ function copySettingsModal(target: Instance) {
 }
 
 async function deleteInstance(inst: Instance) {
-  if (!confirm(`Delete "${inst.name}" and everything in it (worlds, mods, settings)? This can't be undone.`)) return;
+  const sure = await ask({
+    title: `Delete "${inst.name}"?`,
+    body: "Its worlds, mods and settings are deleted too. This can't be undone.",
+    ok: "Delete instance",
+    danger: true,
+  });
+  if (!sure) return;
   try {
     await api("DELETE", `/instances/${enc(inst.id)}`);
     closeModal();
@@ -2647,7 +2713,7 @@ document.addEventListener("click", async (ev) => {
     case "delete-mod": {
       if (!inst) break;
       const file = el.dataset.file!;
-      if (!confirm(`Delete ${file}?`)) break;
+      if (!(await ask({ title: "Delete this mod?", body: `<code>${esc(file)}</code> is removed from the instance's mods folder.`, ok: "Delete", danger: true }))) break;
       busy(`mod:${file}`, () => api("DELETE", `/instances/${enc(inst.id)}/mods/${enc(file)}`));
       break;
     }
@@ -2743,7 +2809,7 @@ document.addEventListener("click", async (ev) => {
     case "delete-shader": {
       if (!inst) break;
       const file = el.dataset.file!;
-      if (!confirm(`Delete ${file}?`)) break;
+      if (!(await ask({ title: "Delete this shader pack?", body: `<code>${esc(file)}</code> is removed from the instance's shaderpacks folder.`, ok: "Delete", danger: true }))) break;
       busy(`shader:${file}`, async () => {
         await api("DELETE", `/instances/${enc(inst.id)}/shaders/${enc(file)}`);
         S.browse.instance = null; // refresh the "Installed" badges
