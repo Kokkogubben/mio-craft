@@ -90,7 +90,7 @@ async fn save(p: &ModProject) -> Result<()> {
 
 async fn latest_plugin(l: &Launcher, loader: Loader, mc: &str) -> Option<String> {
     let url = match loader {
-        Loader::Fabric if templates::is_unobfuscated(mc) => {
+        Loader::Fabric | Loader::Quilt if templates::is_unobfuscated(mc) => {
             "https://maven.fabricmc.net/net/fabricmc/fabric-loom/maven-metadata.xml"
         }
         Loader::Neoforge => {
@@ -112,24 +112,41 @@ pub async fn create(l: &Launcher, req: NewProject) -> Result<ModProject> {
     if dir.exists() {
         bail!("a mod project called {mod_id} already exists; pick another mod id");
     }
+    if let Some(why) = templates::unsupported_reason(inst.loader, &inst.mc_version) {
+        bail!(why);
+    }
     let loader_version = inst
         .loader_version
         .clone()
-        .ok_or_else(|| anyhow!("this instance has no mod loader; create a Fabric or NeoForge instance"))?;
-    if !matches!(inst.loader, Loader::Fabric | Loader::Neoforge) {
-        bail!(
-            "Claude's mod templates are for Fabric and NeoForge instances; {} isn't supported yet",
-            inst.loader.display_name()
-        );
-    }
+        .ok_or_else(|| anyhow!("this instance has no mod loader version; edit or recreate it"))?;
     let vanilla = mojang::fetch_version_json(l, &inst.mc_version).await?;
     let java_target = java::required_major(&vanilla);
-    let plugin = latest_plugin(l, inst.loader, &inst.mc_version).await;
-    let toolchain = templates::toolchain(inst.loader, &inst.mc_version, java_target, plugin)?;
-    let fabric_api_version = if inst.loader == Loader::Fabric {
+    // Forge from 1.17 is built from Forge's own MDK for the instance's Forge version.
+    let mdk = if inst.loader == Loader::Forge && !templates::is_rfg_forge(&inst.mc_version) {
+        Some(forge_mdk(l, &inst.mc_version, &loader_version).await?)
+    } else {
+        None
+    };
+    let toolchain = match &mdk {
+        Some(mdk) => templates::forge_mdk_toolchain(mdk, java_target)?,
+        None => {
+            let plugin = latest_plugin(l, inst.loader, &inst.mc_version).await;
+            templates::toolchain(inst.loader, &inst.mc_version, java_target, plugin)?
+        }
+    };
+    let fabric_api_version = if matches!(inst.loader, Loader::Fabric | Loader::Quilt) {
         loaders::fabric_api_version(l, &inst.mc_version).await.ok().flatten()
     } else {
         None
+    };
+    // A Quilt project is a Fabric mod (Quilt runs those), so it builds against Fabric Loader.
+    let build_loader_version = if inst.loader == Loader::Quilt {
+        let v = loaders::fabric_like_versions(l, Loader::Fabric, &inst.mc_version).await?;
+        loaders::default_version(&v)
+            .map(|v| v.version.clone())
+            .ok_or_else(|| anyhow!("Fabric Loader has no version for Minecraft {}", inst.mc_version))?
+    } else {
+        loader_version.clone()
     };
     let name = req.name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| mod_id.replace('_', " "));
     let spec = ModSpec {
@@ -139,11 +156,15 @@ pub async fn create(l: &Launcher, req: NewProject) -> Result<ModProject> {
         author: req.author.unwrap_or_else(|| "MioCraft user".into()),
         mc_version: inst.mc_version.clone(),
         loader: inst.loader,
-        loader_version: loader_version.clone(),
+        loader_version: build_loader_version,
         fabric_api_version,
         toolchain: toolchain.clone(),
     };
-    for (rel, contents) in templates::render(&spec) {
+    let files = match &mdk {
+        Some(mdk) => templates::render_forge_mdk(&spec, mdk),
+        None => templates::render(&spec),
+    };
+    for (rel, contents) in files {
         let path = crate::paths::safe_join(&dir, &rel)?;
         if let Some(p) = path.parent() {
             tokio::fs::create_dir_all(p).await?;
@@ -169,17 +190,63 @@ pub async fn create(l: &Launcher, req: NewProject) -> Result<ModProject> {
     Ok(project)
 }
 
+/// The text files of Forge's MDK for a Forge version (`short` as instances store it).
+async fn forge_mdk(l: &Launcher, mc: &str, short: &str) -> Result<templates::Mdk> {
+    let full = format!("{mc}-{short}");
+    let url = format!("{}/net/minecraftforge/forge/{full}/forge-{full}-mdk.zip", crate::forge::FORGE_MAVEN);
+    let resp = l.http.get(&url).send().await.with_context(|| format!("GET {url}"))?;
+    if !resp.status().is_success() {
+        bail!("Forge has no MDK (mod template) for {full}; pick another Forge version for the instance");
+    }
+    let bytes = resp.bytes().await?.to_vec();
+    tokio::task::spawn_blocking(move || -> Result<templates::Mdk> {
+        use std::io::Read;
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes)).context("reading the Forge MDK")?;
+        let mut out = templates::Mdk::new();
+        for i in 0..z.len() {
+            let mut e = z.by_index(i)?;
+            if e.is_dir() {
+                continue;
+            }
+            let name = e.name().replace('\\', "/");
+            let mut text = String::new();
+            // Binary files (the Gradle wrapper jar) aren't needed.
+            if e.read_to_string(&mut text).is_ok() {
+                out.insert(name, text.replace("\r\n", "\n"));
+            }
+        }
+        Ok(out)
+    })
+    .await?
+}
+
 /// A Gradle command for the project with the right JDKs wired in.
 pub(crate) async fn gradle_command(l: &Launcher, p: &ModProject, tasks: &[&str]) -> Result<tokio::process::Command> {
     let target_jdk = java::ensure_jdk(l, p.toolchain.java_target).await?;
     let gradle_jdk = java::ensure_jdk(l, p.toolchain.gradle_jdk).await?;
     let gradle = crate::gradle::ensure_gradle(l, &p.toolchain.gradle_version).await?;
     let mut cmd = tokio::process::Command::new(crate::gradle::gradle_bin(&gradle));
+    let mut jdks = vec![(p.toolchain.java_target, target_jdk.clone()), (p.toolchain.gradle_jdk, gradle_jdk.clone())];
+    if p.loader == Loader::Forge {
+        // ForgeGradle 7 runs its Mavenizer in a separate Java process that also needs Java 8, and
+        // RetroFuturaGradle (1.7.10, 1.12.2) decompiles on Java 17.
+        let fg_major = p.toolchain.plugin_version.trim_start_matches(['[', '(']).split('.').next().and_then(|v| v.parse::<u32>().ok());
+        let extra = if fg_major.is_some_and(|m| m >= 7) { Some(8) } else if crate::templates::is_rfg_forge(&p.mc_version) { Some(17) } else { None };
+        if let Some(major) = extra.filter(|m| jdks.iter().all(|(j, _)| j != m)) {
+            jdks.push((major, java::ensure_jdk(l, major).await?));
+        }
+    }
+    // Mavenizer finds JDKs through JAVA_HOME_<major>_<arch> variables (otherwise it downloads its own).
+    let arch = if std::env::consts::ARCH == "aarch64" { "arm64" } else { "X64" };
+    for (major, home) in &jdks {
+        cmd.env(format!("JAVA_HOME_{major}_{arch}"), home);
+    }
+    let paths = jdks.iter().map(|(_, h)| h.display().to_string()).collect::<Vec<_>>().join(",");
     cmd.current_dir(&p.path)
         .env("JAVA_HOME", &gradle_jdk)
         .env("GRADLE_USER_HOME", l.paths.gradle().join("home"))
         .arg("--console=plain")
-        .arg(format!("-Porg.gradle.java.installations.paths={},{}", target_jdk.display(), gradle_jdk.display()))
+        .arg(format!("-Porg.gradle.java.installations.paths={paths}"))
         .arg("-Porg.gradle.java.installations.auto-download=false")
         .arg(format!("-Pclaude_live_api={}", crate::companion::api_jar(l).display()))
         .args(tasks);
@@ -192,7 +259,7 @@ pub fn is_error_line(line: &str) -> bool {
         || t.starts_with("error:")
         || t.starts_with("FAILURE:")
         || t.starts_with("* What went wrong")
-        || (t.starts_with("> ") && !t.starts_with("> Task") && !t.starts_with("> Configure"))
+        || (t.starts_with("> ") && !t.starts_with("> Task") && !t.starts_with("> Configure") && !t.starts_with("> Running"))
         || t.starts_with("e: ")
         || t.contains("Could not resolve")
         || t.contains("Could not find")
@@ -509,6 +576,7 @@ mod tests {
         assert!(super::is_error_line("FAILURE: Build failed with an exception."));
         assert!(super::is_error_line("> Compilation failed; see the compiler error output for details."));
         assert!(!super::is_error_line("> Task :compileJava"));
+        assert!(!super::is_error_line(" > Running 'rename'"));
         assert!(!super::is_error_line("BUILD SUCCESSFUL in 3s"));
     }
 }

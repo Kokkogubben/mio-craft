@@ -1,5 +1,7 @@
-//! Mod project templates for Fabric and NeoForge, adapted to the instance's
-//! Minecraft version.
+//! Mod project templates, adapted to the instance's loader and Minecraft version:
+//! Fabric (also used for Quilt, which runs Fabric mods), NeoForge, Forge from the
+//! instance's own MDK (1.17 and newer), and Forge 1.7.10 and 1.12.2 with
+//! RetroFuturaGradle.
 //!
 //! Build tool versions are picked per Minecraft "era". They are a best
 //! starting point: if a build fails because a version moved on, Claude Code
@@ -21,6 +23,33 @@ pub const GRADLE_9: &str = "9.8.2";
 pub const FABRIC_LOOM_OBF: &str = "1.11-SNAPSHOT";
 pub const FABRIC_LOOM_UNOBF_FALLBACK: &str = "1.14-SNAPSHOT";
 pub const MODDEV_FALLBACK: &str = "2.0.107";
+/// RetroFuturaGradle (Forge 1.7.10 and 1.12.2) and the Gradle its example builds with.
+/// Pinned: a newer plugin can need a newer Gradle.
+pub const RFG_VERSION: &str = "2.0.6";
+pub const RFG_GRADLE: &str = "9.5.0";
+
+/// Forge versions built with RetroFuturaGradle instead of the MDK.
+pub fn is_rfg_forge(mc: &str) -> bool {
+    mc == "1.7.10" || mc == "1.12.2"
+}
+
+/// Why Claude's templates can't make a mod for this loader and Minecraft version,
+/// or None if they can. Shown in the launcher and returned by create_mod.
+pub fn unsupported_reason(loader: Loader, mc: &str) -> Option<String> {
+    match loader {
+        Loader::Vanilla => Some("Vanilla instances can't load mods. Create an instance with a mod loader to make mods with Claude.".into()),
+        Loader::Fabric | Loader::Quilt if !mc_at_least(mc, "1.14.4") => Some(format!(
+            "Claude's {} mod templates need Minecraft 1.14.4 or newer.",
+            loader.display_name()
+        )),
+        Loader::Neoforge if !mc_at_least(mc, "1.20.2") => Some("NeoForge supports Minecraft 1.20.2 and newer.".into()),
+        Loader::Forge if !is_rfg_forge(mc) && !mc_at_least(mc, "1.17") => Some(format!(
+            "Claude's Forge mod templates cover Minecraft 1.7.10, 1.12.2 and 1.17 and newer, not {mc}. This instance can still use mods from the Browse tab."
+        )),
+        Loader::LegacyFabric => Some("Claude's mod templates don't cover Legacy Fabric yet. This instance can still use mods from the Browse tab.".into()),
+        _ => None,
+    }
+}
 
 pub fn mc_at_least(mc: &str, min: &str) -> bool {
     cmp_versions(mc, min) != std::cmp::Ordering::Less
@@ -40,15 +69,17 @@ pub struct Toolchain {
     pub plugin_version: String,
 }
 
+/// Build tools for a new project. Forge from 1.17 takes them from its MDK instead
+/// (`forge_mdk_toolchain`).
 pub fn toolchain(loader: Loader, mc: &str, java_target: u32, latest_plugin: Option<String>) -> Result<Toolchain> {
+    if let Some(why) = unsupported_reason(loader, mc) {
+        bail!(why);
+    }
     let unobf = is_unobfuscated(mc);
     let gradle_jdk = java_target.max(21);
     let gradle_version = if unobf || java_target > 24 { GRADLE_9 } else { GRADLE_8 }.to_string();
     let plugin_version = match loader {
-        Loader::Fabric => {
-            if !mc_at_least(mc, "1.14.4") {
-                bail!("Mod templates need Minecraft 1.14.4 or newer (the first version with official mappings)");
-            }
+        Loader::Fabric | Loader::Quilt => {
             if unobf {
                 latest_plugin
                     .map(|v| loom_snapshot(&v))
@@ -57,17 +88,14 @@ pub fn toolchain(loader: Loader, mc: &str, java_target: u32, latest_plugin: Opti
                 FABRIC_LOOM_OBF.into()
             }
         }
-        Loader::Neoforge => {
-            if !mc_at_least(mc, "1.20.2") {
-                bail!("NeoForge supports Minecraft 1.20.2 and newer");
-            }
-            latest_plugin.unwrap_or_else(|| MODDEV_FALLBACK.into())
+        Loader::Neoforge => latest_plugin.unwrap_or_else(|| MODDEV_FALLBACK.into()),
+        Loader::Forge if is_rfg_forge(mc) => {
+            // Minecraft 1.7.10 and 1.12.2 run on Java 8; Gradle itself runs on a newer JDK.
+            // RetroFuturaGradle 2 is built for Java 25, so Gradle runs on it.
+            return Ok(Toolchain { java_target: 8, gradle_version: RFG_GRADLE.into(), gradle_jdk: 25, plugin_version: RFG_VERSION.into() });
         }
-        Loader::Vanilla => bail!("Vanilla instances can't load mods; create a Fabric or NeoForge instance"),
-        other => bail!(
-            "Claude's mod templates are for Fabric and NeoForge instances; {} isn't supported yet",
-            other.display_name()
-        ),
+        Loader::Forge => bail!("Forge projects from 1.17 take their build tools from Forge's MDK"),
+        Loader::Vanilla | Loader::LegacyFabric => unreachable!("refused by unsupported_reason"),
     };
     Ok(Toolchain { java_target, gradle_version, gradle_jdk, plugin_version })
 }
@@ -89,8 +117,10 @@ pub struct ModSpec {
     pub author: String,
     pub mc_version: String,
     pub loader: Loader,
+    /// The version the project builds against: for Quilt, a Fabric Loader version
+    /// (the project is a Fabric mod, which Quilt runs).
     pub loader_version: String,
-    /// Fabric only.
+    /// Fabric and Quilt only.
     pub fabric_api_version: Option<String>,
     pub toolchain: Toolchain,
 }
@@ -150,7 +180,7 @@ pub fn render(spec: &ModSpec) -> BTreeMap<String, String> {
     f.insert(".gitignore".into(), GITIGNORE.into());
     f.insert("CLAUDE.md".into(), claude_md(spec));
     match spec.loader {
-        Loader::Fabric => {
+        Loader::Fabric | Loader::Quilt => {
             let unobf = is_unobfuscated(&spec.mc_version);
             f.insert("settings.gradle".into(), fabric_settings(spec));
             f.insert("build.gradle".into(), fabric_build(spec, unobf));
@@ -174,10 +204,364 @@ pub fn render(spec: &ModSpec) -> BTreeMap<String, String> {
                 "{\n}\n".into(),
             );
         }
-        // toolchain() refuses these before any files are made.
-        Loader::Vanilla | Loader::Forge | Loader::Quilt | Loader::LegacyFabric => {}
+        Loader::Forge if is_rfg_forge(&spec.mc_version) => {
+            f.insert("settings.gradle".into(), rfg_settings(spec));
+            f.insert("build.gradle".into(), rfg_build(spec));
+            f.insert("gradle.properties".into(), rfg_props(spec));
+            f.insert(format!("src/main/java/{pkg_path}/{class}.java"), rfg_main(spec, &pkg, &class));
+            f.insert("src/main/resources/mcmod.info".into(), rfg_mcmod_info(spec));
+            f.insert("src/main/resources/pack.mcmeta".into(), rfg_pack_mcmeta(spec));
+        }
+        // Forge from 1.17 is made from its MDK (render_forge_mdk); toolchain() refuses the rest.
+        Loader::Forge | Loader::Vanilla | Loader::LegacyFabric => {}
     }
     f
+}
+
+// ---------- Forge 1.7.10 and 1.12.2 (RetroFuturaGradle) ----------
+
+fn rfg_settings(s: &ModSpec) -> String {
+    format!(
+        r#"pluginManagement {{
+    repositories {{
+        maven {{
+            name = 'GTNH'
+            url = 'https://nexus.gtnewhorizons.com/repository/public/'
+            mavenContent {{
+                includeGroupByRegex 'com\\.gtnewhorizons\\..+'
+                includeGroup 'com.gtnewhorizons'
+            }}
+        }}
+        gradlePluginPortal()
+        mavenCentral()
+    }}
+}}
+
+rootProject.name = '{id}'
+"#,
+        id = s.mod_id
+    )
+}
+
+fn rfg_build(s: &ModSpec) -> String {
+    format!(
+        r#"buildscript {{
+    repositories {{
+        maven {{
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+            mavenContent {{
+                includeGroup 'net.fabricmc'
+            }}
+        }}
+    }}
+}}
+
+plugins {{
+    id 'java-library'
+    id 'com.gtnewhorizons.retrofuturagradle' version '{rfg}'
+}}
+
+version = project.mod_version
+group = project.maven_group
+
+base {{
+    archivesName = project.archives_base_name
+}}
+
+java {{
+    toolchain {{
+        languageVersion = JavaLanguageVersion.of(8)
+    }}
+}}
+
+minecraft {{
+    mcVersion.set('{mc}')
+    username.set('Developer')
+    injectedTags.put('VERSION', project.version)
+}}
+
+tasks.injectTags.configure {{
+    outputClassName.set('{pkg}.Tags')
+}}
+
+repositories {{
+    // Add repositories for extra dependencies here.
+}}
+
+processResources {{
+    inputs.property 'version', project.version
+    filesMatching('mcmod.info') {{
+        expand 'version': project.version
+    }}
+}}
+
+tasks.withType(JavaCompile).configureEach {{
+    options.encoding = 'UTF-8'
+}}
+"#,
+        rfg = s.toolchain.plugin_version,
+        mc = s.mc_version,
+        pkg = s.package(),
+    )
+}
+
+fn rfg_props(s: &ModSpec) -> String {
+    format!(
+        "org.gradle.jvmargs=-Xmx3G
+
+mod_version=1.0.0
+maven_group={group}
+archives_base_name={id}
+",
+        group = s.package(),
+        id = s.mod_id,
+    )
+}
+
+fn rfg_main(s: &ModSpec, pkg: &str, class: &str) -> String {
+    let fml = if s.mc_version == "1.7.10" { "cpw.mods.fml" } else { "net.minecraftforge.fml" };
+    format!(
+        r#"package {pkg};
+
+import {fml}.common.Mod;
+import {fml}.common.event.FMLInitializationEvent;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+@Mod(modid = {class}.MOD_ID, name = {class}.NAME, version = Tags.VERSION, acceptedMinecraftVersions = "[{mc}]")
+public class {class} {{
+    public static final String MOD_ID = "{id}";
+    public static final String NAME = {name};
+    public static final Logger LOGGER = LogManager.getLogger(MOD_ID);
+
+    @Mod.EventHandler
+    public void init(FMLInitializationEvent event) {{
+        LOGGER.info(NAME + " loaded");
+    }}
+}}
+"#,
+        mc = s.mc_version,
+        id = s.mod_id,
+        name = esc_json(&s.name),
+    )
+}
+
+/// Groovy's `expand` reads `$` as a placeholder, so user text escapes it.
+fn esc_expand(json: String) -> String {
+    json.replace('$', "\\$")
+}
+
+fn rfg_mcmod_info(s: &ModSpec) -> String {
+    format!(
+        r#"[
+  {{
+    "modid": {id},
+    "name": {name},
+    "description": {desc},
+    "version": "${{version}}",
+    "mcversion": "{mc}",
+    "authorList": [{author}],
+    "dependencies": []
+  }}
+]
+"#,
+        id = esc_json(&s.mod_id),
+        name = esc_expand(esc_json(&s.name)),
+        desc = esc_expand(esc_json(&s.description)),
+        author = esc_expand(esc_json(&s.author)),
+        mc = s.mc_version,
+    )
+}
+
+/// Without its own pack.mcmeta, old Forge writes one from the mod name without escaping it,
+/// so a name with a double quote crashes 1.12.2 at startup.
+fn rfg_pack_mcmeta(s: &ModSpec) -> String {
+    let format = if s.mc_version == "1.7.10" { 1 } else { 3 };
+    format!(
+        r#"{{
+  "pack": {{
+    "pack_format": {format},
+    "description": {name}
+  }}
+}}
+"#,
+        name = esc_json(&s.name),
+    )
+}
+
+// ---------- Forge 1.17 and newer (from the instance's own MDK) ----------
+
+/// The text files of a Forge MDK, by path inside the zip.
+pub type Mdk = BTreeMap<String, String>;
+
+/// Build tools for an MDK: its Gradle and Java versions, with Gradle moved to a
+/// JDK it can run on (Gradle before 8.5 can't run on Java 21).
+pub fn forge_mdk_toolchain(mdk: &Mdk, fallback_java: u32) -> Result<Toolchain> {
+    let wrapper = mdk.get("gradle/wrapper/gradle-wrapper.properties").map(String::as_str).unwrap_or("");
+    let gradle = wrapper
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("distributionUrl="))
+        .and_then(|u| u.rsplit('/').next())
+        .and_then(|f| f.strip_prefix("gradle-"))
+        .and_then(|f| f.split('-').next())
+        .map(str::to_string)
+        .ok_or_else(|| anyhow::anyhow!("this Forge MDK doesn't say which Gradle it needs"))?;
+    let build = mdk.get("build.gradle").map(String::as_str).unwrap_or("");
+    let java_target = build
+        .split("JavaLanguageVersion.of(")
+        .nth(1)
+        .and_then(|r| r.split(')').next())
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .unwrap_or(fallback_java);
+    let plugin_version = build
+        .split("net.minecraftforge.gradle' version '")
+        .nth(1)
+        .or_else(|| build.split("name: 'ForgeGradle', version: '").nth(1))
+        .and_then(|r| r.split('\'').next())
+        .unwrap_or("?")
+        .to_string();
+    let mut parts = gradle.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    let (major, minor) = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+    let (gradle_version, gradle_jdk) = match (major, minor) {
+        (0..=6, _) => bail!("this Forge MDK needs Gradle {gradle}, which can't run on a current Java"),
+        // VERIFY: ForgeGradle 5 (Minecraft 1.17–1.18.1) on Gradle 7.6 was never built.
+        (7, _) => ("7.6.4".to_string(), 17),
+        (8, 0..=4) => (gradle, 17),
+        _ => (gradle, java_target.max(21)),
+    };
+    Ok(Toolchain { java_target, gradle_version, gradle_jdk, plugin_version })
+}
+
+/// A new project from a Forge MDK: its build files and resources with the example
+/// mod's names replaced, and a minimal main class in place of the example's.
+pub fn render_forge_mdk(spec: &ModSpec, mdk: &Mdk) -> BTreeMap<String, String> {
+    let mut f = BTreeMap::new();
+    let pkg = spec.package();
+    let pkg_path = pkg.replace('.', "/");
+    let class = spec.class_name();
+    f.insert(".gitignore".into(), GITIGNORE.into());
+    f.insert("CLAUDE.md".into(), claude_md(spec));
+    let rename = |t: &str| t.replace("com.example.examplemod", &pkg).replace("examplemod", &spec.mod_id);
+    for (path, text) in mdk {
+        let keep = matches!(path.as_str(), "build.gradle" | "settings.gradle" | "gradle.properties")
+            || path.starts_with("src/main/resources/");
+        if !keep {
+            continue;
+        }
+        let mut t = rename(text);
+        match path.as_str() {
+            "settings.gradle" => t = strip_foojay(&t),
+            "gradle.properties" => t = mdk_props(&t, spec),
+            p if p.ends_with("mods.toml") => t = mdk_mods_toml(&t, spec),
+            _ => {}
+        }
+        f.insert(rename(path), t);
+    }
+    let java = mdk.iter().filter(|(p, _)| p.ends_with(".java")).map(|(_, t)| t.as_str()).collect::<String>();
+    f.insert(format!("src/main/java/{pkg_path}/{class}.java"), forge_main(spec, &pkg, &class, &java));
+    f.insert(format!("src/main/resources/assets/{}/lang/en_us.json", spec.mod_id), "{
+}
+".into());
+    f
+}
+
+/// Drop the foojay toolchain-download plugin: the launcher supplies the JDKs.
+fn strip_foojay(t: &str) -> String {
+    let lines: Vec<&str> = t.lines().collect();
+    let mut out = vec![];
+    let mut i = 0;
+    while i < lines.len() {
+        if lines[i].trim_start().starts_with("plugins") {
+            if let Some(end) = (i..lines.len()).find(|&j| lines[j].trim() == "}") {
+                if lines[i..=end].iter().any(|l| l.contains("foojay-resolver")) {
+                    i = end + 1;
+                    continue;
+                }
+            }
+        }
+        out.push(lines[i]);
+        i += 1;
+    }
+    out.join("
+") + "
+"
+}
+
+/// Properties-file value: backslashes escaped, newlines as `\n`.
+fn prop_value(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\n', "\\n")
+}
+
+fn mdk_props(t: &str, s: &ModSpec) -> String {
+    t.lines()
+        .map(|l| {
+            // Some MDKs paste these into quoted TOML strings, so no double quotes.
+            let set = |k: &str, v: &str| format!("{k}={}", prop_value(&v.replace('"', "'")));
+            if l.starts_with("mod_name=") {
+                set("mod_name", &s.name)
+            } else if l.starts_with("mod_authors=") {
+                set("mod_authors", &s.author)
+            } else if l.starts_with("mod_description=") {
+                set("mod_description", &s.description)
+            } else {
+                l.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("
+")
+        + "
+"
+}
+
+/// Older MDKs write the example's name, authors and description into mods.toml
+/// itself; newer ones fill them in from gradle.properties.
+fn mdk_mods_toml(t: &str, s: &ModSpec) -> String {
+    let mut t = t
+        .replace("displayName=\"Example Mod\"", &format!("displayName=\"{}\"", esc_toml(&s.name)))
+        .replace("authors=\"YourNameHere, OtherNameHere\"", &format!("authors=\"{}\"", esc_toml(&s.author)));
+    if let Some(start) = t.find("description='''") {
+        let body = start + "description='''".len();
+        if let Some(len) = t[body..].find("'''") {
+            if !t[body..body + len].contains("${") {
+                t.replace_range(body..body + len, &s.description.replace("'''", "'"));
+            }
+        }
+    }
+    t
+}
+
+/// A main class that does nothing but log, built like the MDK's example (whose
+/// constructor takes the loading context from Forge 1.21).
+fn forge_main(s: &ModSpec, pkg: &str, class: &str, mdk_java: &str) -> String {
+    let context = mdk_java.contains("FMLJavaModLoadingContext context");
+    let (log_imports, logger) = if mdk_java.contains("com.mojang.logging.LogUtils") {
+        ("import com.mojang.logging.LogUtils;\nimport org.slf4j.Logger;", "LogUtils.getLogger()")
+    } else {
+        ("import org.apache.logging.log4j.LogManager;\nimport org.apache.logging.log4j.Logger;", "LogManager.getLogger()")
+    };
+    format!(
+        r#"package {pkg};
+
+{log_imports}
+import net.minecraftforge.fml.common.Mod;
+{ctx_import}
+@Mod({class}.MOD_ID)
+public class {class} {{
+    public static final String MOD_ID = "{id}";
+    public static final Logger LOGGER = {logger};
+
+    public {class}({ctx_param}) {{
+        LOGGER.info("{name} loaded");
+    }}
+}}
+"#,
+        ctx_import = if context { "import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;\n" } else { "" },
+        ctx_param = if context { "FMLJavaModLoadingContext context" } else { "" },
+        id = s.mod_id,
+        name = s.name.replace('"', "'"),
+    )
 }
 
 const GITIGNORE: &str = "build/\n.gradle/\nrun/\nout/\n*.iml\n.idea/\n.vscode/\nbin/\n";
@@ -318,7 +702,7 @@ fn fabric_mod_json(s: &ModSpec, pkg: &str, class: &str) -> String {
     "main": ["{pkg}.{class}"]
   }},
   "depends": {{
-    "fabricloader": ">={loader}",
+    "fabricloader": "{loader_dep}",
     "minecraft": "~{mc}",
     "java": ">={java_dep}",
     "fabric-api": "*"
@@ -326,10 +710,10 @@ fn fabric_mod_json(s: &ModSpec, pkg: &str, class: &str) -> String {
 }}
 "#,
         id = esc_json(&s.mod_id),
-        name = esc_json(&s.name),
-        desc = esc_json(&s.description),
-        author = esc_json(&s.author),
-        loader = s.loader_version,
+        name = esc_expand(esc_json(&s.name)),
+        desc = esc_expand(esc_json(&s.description)),
+        author = esc_expand(esc_json(&s.author)),
+        loader_dep = if s.loader == Loader::Quilt { "*".to_string() } else { format!(">={}", s.loader_version) },
         mc = s.mc_version,
     )
 }
@@ -472,11 +856,37 @@ fn claude_md(s: &ModSpec) -> String {
     } else {
         "official Mojang mappings".to_string()
     };
+    let rfg = s.loader == Loader::Forge && is_rfg_forge(&s.mc_version);
+    let mappings = if rfg { "MCP names (RetroFuturaGradle)".to_string() } else { mappings };
     let docs = match s.loader {
-        Loader::Fabric => "https://docs.fabricmc.net/develop/",
+        Loader::Fabric | Loader::Quilt => "https://docs.fabricmc.net/develop/",
+        Loader::Forge if s.mc_version == "1.12.2" => "https://docs.minecraftforge.net/en/1.12.x/",
+        Loader::Forge if rfg => "https://github.com/GTNewHorizons/RetroFuturaGradle",
+        Loader::Forge => "https://docs.minecraftforge.net/",
         _ => "https://docs.neoforged.net/",
     };
-    let version_file = if s.loader == Loader::Fabric { "fabric.mod.json" } else { "the mods.toml" };
+    let plugin_name = match s.loader {
+        Loader::Fabric | Loader::Quilt => "Fabric Loom",
+        Loader::Forge if rfg => "RetroFuturaGradle",
+        Loader::Forge => "ForgeGradle",
+        _ => "ModDevGradle",
+    };
+    let loader_line = if s.loader == Loader::Quilt {
+        format!("Fabric Loader {} (to build; Quilt runs Fabric mods)", s.loader_version)
+    } else {
+        s.loader_version.clone()
+    };
+    let notes = match s.loader {
+        Loader::Quilt => "\n## Quilt\n\nThis is a Fabric mod: Quilt loads Fabric mods, and the dev client runs it on\nFabric Loader. On Quilt, Fabric API comes from Quilted Fabric API (Modrinth\nproject `qsl`); if the instance doesn't have it, install it with\n`install_online_mod` before testing there.\n",
+        Loader::Forge if rfg => "\n## Forge on Java 8\n\nMinecraft 1.7.10 and 1.12.2 run on Java 8, so write Java 8 code (no `var`,\nrecords or text blocks). Mod metadata is in `src/main/resources/mcmod.info`.\nLanguage files are `.lang` files: `assets/<mod id>/lang/en_us.lang` on 1.12.2,\n`en_US.lang` on 1.7.10. Assets are only loaded for the mod id in lowercase.\n",
+        Loader::Forge => "\n## Forge\n\nThe build files come from Forge's own MDK for this Forge version, with the\nexample mod's names replaced. Mod details (name, authors, description) are in\n`gradle.properties` or `src/main/resources/META-INF/mods.toml`.\n",
+        _ => "",
+    };
+    let version_file = match s.loader {
+        Loader::Fabric | Loader::Quilt => "fabric.mod.json",
+        Loader::Forge if rfg => "mcmod.info (it's filled in from gradle.properties)",
+        _ => "the mods.toml",
+    };
     format!(
         r#"# {name}
 
@@ -503,18 +913,17 @@ the launcher's own Java and Gradle so nothing needs installing:
    test the mod; `read_dev_log` shows its output. `launch_game` plays the real
    instance with the user's account.
 
-Bump `mod_version` in `gradle.properties` for releases (and in {version_file}
-for NeoForge). Keep the mod id unchanged.
-"#,
+Bump `mod_version` in `gradle.properties` for releases (and check {version_file}).
+Keep the mod id unchanged.
+{notes}"#,
         name = s.name,
         mc = s.mc_version,
         id = s.mod_id,
         pkg = s.package(),
         class = s.class_name(),
         java = s.toolchain.java_target,
-        loaderv = s.loader_version,
+        loaderv = loader_line,
         gradle = s.toolchain.gradle_version,
-        plugin_name = if s.loader == Loader::Fabric { "Fabric Loom" } else { "ModDevGradle" },
         plugin = s.toolchain.plugin_version,
     )
 }
@@ -591,5 +1000,103 @@ mod tests {
     #[test]
     fn loom_snap() {
         assert_eq!(loom_snapshot("1.14.3"), "1.14-SNAPSHOT");
+    }
+
+    #[test]
+    fn support() {
+        assert!(unsupported_reason(Loader::Quilt, "1.20.1").is_none());
+        assert!(unsupported_reason(Loader::Forge, "1.7.10").is_none());
+        assert!(unsupported_reason(Loader::Forge, "1.12.2").is_none());
+        assert!(unsupported_reason(Loader::Forge, "1.17.1").is_none());
+        assert!(unsupported_reason(Loader::Forge, "26.3").is_none());
+        assert!(unsupported_reason(Loader::Forge, "1.16.5").is_some());
+        assert!(unsupported_reason(Loader::Forge, "1.8.9").is_some());
+        assert!(unsupported_reason(Loader::LegacyFabric, "1.8.9").is_some());
+        assert!(unsupported_reason(Loader::Vanilla, "1.21.1").is_some());
+    }
+
+    #[test]
+    fn quilt_is_a_fabric_mod() {
+        let f = render(&spec(Loader::Quilt, "1.20.1", 17));
+        let mj: serde_json::Value = serde_json::from_str(&f["src/main/resources/fabric.mod.json"]).unwrap();
+        assert_eq!(mj["depends"]["fabricloader"], "*");
+        assert!(f["CLAUDE.md"].contains("Quilted Fabric API"));
+    }
+
+    #[test]
+    fn rfg_files() {
+        let s = spec(Loader::Forge, "1.12.2", 8);
+        assert_eq!(s.toolchain.gradle_version, RFG_GRADLE);
+        let f = render(&s);
+        let main = &f["src/main/java/com/claudemods/glow_blocks/GlowBlocksMod.java"];
+        assert!(main.contains("import net.minecraftforge.fml.common.Mod;"));
+        assert!(main.contains(r#"NAME = "Glow \"Blocks\"""#));
+        assert!(f["build.gradle"].contains("mcVersion.set('1.12.2')"));
+        let info: serde_json::Value = serde_json::from_str(&f["src/main/resources/mcmod.info"]).unwrap();
+        assert_eq!(info[0]["modid"], "glow_blocks");
+        let pack: serde_json::Value = serde_json::from_str(&f["src/main/resources/pack.mcmeta"]).unwrap();
+        assert_eq!(pack["pack"]["description"], "Glow \"Blocks\"");
+        assert_eq!(pack["pack"]["pack_format"], 3);
+        let old = render(&spec(Loader::Forge, "1.7.10", 8));
+        assert!(old["src/main/java/com/claudemods/glow_blocks/GlowBlocksMod.java"].contains("import cpw.mods.fml.common.Mod;"));
+    }
+
+    fn mdk(gradle: &str, java: u32, ctx: bool) -> Mdk {
+        let mut m = Mdk::new();
+        m.insert(
+            "gradle/wrapper/gradle-wrapper.properties".into(),
+            format!("distributionUrl=https\\://services.gradle.org/distributions/gradle-{gradle}-bin.zip\n"),
+        );
+        m.insert(
+            "build.gradle".into(),
+            format!("plugins {{\n    id 'net.minecraftforge.gradle' version '[6.0,6.2)'\n}}\njava.toolchain.languageVersion = JavaLanguageVersion.of({java})\nrootProject.name = 'examplemod'\n"),
+        );
+        m.insert(
+            "settings.gradle".into(),
+            "pluginManagement {\n}\n\nplugins {\n    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.7.0'\n}\n".into(),
+        );
+        m.insert("gradle.properties".into(), "mod_id=examplemod\nmod_name=Example Mod\nmod_group_id=com.example.examplemod\n".into());
+        m.insert(
+            "src/main/resources/META-INF/mods.toml".into(),
+            "modId=\"examplemod\"\ndisplayName=\"Example Mod\"\ndescription='''Example mod description.\nMore.'''\n".into(),
+        );
+        m.insert(
+            "src/main/java/com/example/examplemod/ExampleMod.java".into(),
+            format!("import com.mojang.logging.LogUtils;\npublic ExampleMod({}) {{}}\n", if ctx { "FMLJavaModLoadingContext context" } else { "" }),
+        );
+        m
+    }
+
+    #[test]
+    fn forge_mdk_tools() {
+        let t = forge_mdk_toolchain(&mdk("8.8", 17, false), 17).unwrap();
+        assert_eq!((t.gradle_version.as_str(), t.gradle_jdk, t.java_target), ("8.8", 21, 17));
+        assert_eq!(t.plugin_version, "[6.0,6.2)");
+        let t = forge_mdk_toolchain(&mdk("7.2", 16, false), 16).unwrap();
+        assert_eq!((t.gradle_version.as_str(), t.gradle_jdk), ("7.6.4", 17));
+        let t = forge_mdk_toolchain(&mdk("9.7.1", 25, true), 25).unwrap();
+        assert_eq!((t.gradle_version.as_str(), t.gradle_jdk), ("9.7.1", 25));
+        assert!(forge_mdk_toolchain(&mdk("6.9", 8, false), 8).is_err());
+    }
+
+    #[test]
+    fn forge_mdk_files() {
+        let m = mdk("9.7.1", 25, true);
+        let mut s = spec(Loader::Fabric, "26.3", 25);
+        s.loader = Loader::Forge;
+        s.toolchain = forge_mdk_toolchain(&m, 25).unwrap();
+        let f = render_forge_mdk(&s, &m);
+        assert!(!f.keys().any(|k| k.contains("examplemod")));
+        assert!(!f.values().any(|v| v.contains("examplemod")));
+        assert!(!f["settings.gradle"].contains("foojay"));
+        assert!(f["settings.gradle"].contains("pluginManagement"));
+        assert_eq!(f["gradle.properties"].lines().nth(1), Some("mod_name=Glow 'Blocks'"));
+        let toml = &f["src/main/resources/META-INF/mods.toml"];
+        assert!(toml.contains(r#"displayName="Glow \"Blocks\"""#));
+        assert!(toml.contains("description='''Things glow.'''"));
+        let main = &f["src/main/java/com/claudemods/glow_blocks/GlowBlocksMod.java"];
+        assert!(main.contains("public GlowBlocksMod(FMLJavaModLoadingContext context)"));
+        let old = render_forge_mdk(&s, &mdk("8.8", 17, false));
+        assert!(old["src/main/java/com/claudemods/glow_blocks/GlowBlocksMod.java"].contains("public GlowBlocksMod()"));
     }
 }

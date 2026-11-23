@@ -57,7 +57,7 @@ MioCraft does three things:
 
 **Claude Code**
 
-- **Make a mod with Claude**: describe a mod in the launcher and it opens Claude Code with your idea and the instance ready; "Ask Claude" does the same for changing an existing mod. Mod templates exist for **Fabric and NeoForge** instances
+- **Make a mod with Claude**: describe a mod in the launcher and it opens Claude Code with your idea and the instance ready; "Ask Claude" does the same for changing an existing mod. Mod templates exist for **Fabric, Quilt, NeoForge and Forge** instances (Forge 1.7.10, 1.12.2, and 1.17 and newer)
 - **Ask Claude to fix** on the crash banner opens Claude Code with the crash details
 - **Live mode** (experimental, Fabric on Minecraft 26.x): change the game while it runs: hotswap code, add new blocks and items with live textures, and an experimental mode that registers real content mid-game. Each part is a toggle in the instance's settings
 - **Gradle downloaded automatically**, so you don't need to install anything to build mods

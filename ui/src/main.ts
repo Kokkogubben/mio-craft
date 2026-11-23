@@ -16,6 +16,8 @@ interface Instance {
   mods_dir: string;
   ram_mb: number | null;
   jvm_args?: string[] | null;
+  /** Why Claude's mod templates don't cover this instance (null when they do). */
+  mod_template_unsupported?: string | null;
   created_at: number;
   last_played: number | null;
   live?: LiveSettings;
@@ -196,7 +198,6 @@ function loaderUnsupported(loader: string, mc: string): string {
 }
 
 /** Claude's mod templates exist for these loaders only. */
-const TEMPLATE_LOADERS = ["fabric", "neoforge"];
 
 function fmtSize(b: number): string {
   if (b > 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
@@ -949,12 +950,7 @@ function projectsTab(inst: Instance): string {
       </div>`;
     })
     .join("");
-  if (inst.loader === "vanilla") {
-    return `<div class="note">Vanilla instances can't load mods. Create a Fabric or NeoForge instance to make mods with Claude.</div>`;
-  }
-  if (!TEMPLATE_LOADERS.includes(inst.loader)) {
-    return `<div class="note">Claude's mod templates are for Fabric and NeoForge instances. To make a mod with Claude, create a Fabric or NeoForge instance; ${loaderLabel(inst.loader)} instances can still use mods from the Browse tab.</div>`;
-  }
+  if (inst.mod_template_unsupported) return `<div class="note">${esc(inst.mod_template_unsupported)}</div>`;
   const opening = S.busy.has("claude-open");
   return `
     <div class="make">
@@ -1132,10 +1128,10 @@ async function newInstanceModal() {
       const shown = v.slice(0, 40);
       if (!shown.some((x) => x.version === pick)) shown.push(v.find((x) => x.version === pick)!);
       lv.innerHTML = shown.map((x) => `<option value="${esc(x.version)}" ${x.version === pick ? "selected" : ""}>${esc(x.version)}${label(x)}</option>`).join("");
-      if (loader === "forge" || loader === "quilt" || loader === "legacyfabric") {
-        hint.textContent = `Claude's mod templates are for Fabric and NeoForge; ${loaderLabel(loader)} instances can play and use mods from Modrinth and CurseForge.`;
-      }
       lv.disabled = false;
+      const support = await api<{ unsupported_reason: string | null }>("GET", `/mod-templates/${loader}/${enc(mc.value)}`).catch(() => null);
+      if (seq !== loadSeq) return;
+      if (support?.unsupported_reason) hint.textContent = support.unsupported_reason;
     } catch (e) {
       if (seq !== loadSeq) return;
       lv.innerHTML = "<option value=''>Couldn't load</option>";

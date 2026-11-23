@@ -80,6 +80,7 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/config", get(get_config).patch(patch_config))
         .route("/versions", get(versions))
         .route("/loaders/{loader}/{mc}", get(loader_versions))
+        .route("/mod-templates/{loader}/{mc}", get(mod_template_support))
         .route("/accounts", get(accounts))
         .route("/accounts/login", post(login))
         .route("/accounts/{id}", delete(remove_account))
@@ -206,6 +207,12 @@ async fn loader_versions(State(s): State<AppState>, Path((loader, mc)): Path<(St
     Ok(Json(loaders::versions(&s.l, loader, &mc).await?))
 }
 
+/// Whether Claude's mod templates cover a loader and Minecraft version, and why not.
+async fn mod_template_support(Path((loader, mc)): Path<(String, String)>) -> R<Value> {
+    let loader = loaders::Loader::parse(&loader).ok_or_else(|| anyhow::anyhow!("unknown mod loader {loader:?}"))?;
+    Ok(Json(json!({ "unsupported_reason": crate::templates::unsupported_reason(loader, &mc) })))
+}
+
 async fn accounts(State(s): State<AppState>) -> R<Vec<auth::AccountInfo>> {
     Ok(Json(auth::list(&s.l).await))
 }
@@ -251,6 +258,8 @@ async fn instance_json(l: &Launcher, i: &instances::Instance) -> Value {
     v["running"] = json!(l.processes.is_running(&launch::game_source(&i.id)).await);
     v["game_dir"] = json!(l.paths.game_dir(&i.id));
     v["mods_dir"] = json!(l.paths.mods_dir(&i.id));
+    // Why Claude can't make a mod for this instance, if it can't.
+    v["mod_template_unsupported"] = json!(crate::templates::unsupported_reason(i.loader, &i.mc_version));
     v
 }
 

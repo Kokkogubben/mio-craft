@@ -286,7 +286,7 @@ server.registerTool(
   "create_mod",
   {
     description:
-      "Create a new mod project for a Fabric or NeoForge instance (Forge, Quilt and Legacy Fabric instances have no template), from a template matching the instance's Minecraft version. Returns the source folder: edit files there, starting with its CLAUDE.md.",
+      "Create a new mod project for an instance, from a template matching its loader and Minecraft version: Fabric, Quilt (built as a Fabric mod), NeoForge, and Forge (1.7.10, 1.12.2, and 1.17 and newer, from Forge's own MDK). Legacy Fabric has no template. Returns the source folder: edit files there, starting with its CLAUDE.md.",
     inputSchema: {
       instance_id: z.string(),
       mod_id: z.string().describe("lowercase a-z, 0-9, _ ; e.g. glowing_ores"),
