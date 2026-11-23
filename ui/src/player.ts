@@ -320,8 +320,6 @@ export function initPlayer(canvas: HTMLCanvasElement, nameLabel: HTMLElement) {
   viewer.controls.enablePan = false;
   viewer.controls.maxDistance = 5000;
   viewer.animation = new FunctionAnimation(pose);
-  // For checking the scene from the browser console while developing.
-  if (import.meta.env.DEV) (window as unknown as { homeViewer: SkinViewer }).homeViewer = viewer;
   addSun(viewer);
   addOutline(viewer);
   placeCamera();
