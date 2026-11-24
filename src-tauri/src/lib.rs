@@ -2,6 +2,10 @@
 //! serves the local API, and gives the web UI the API address plus a few
 //! OS helpers (open a folder, open a URL, find the bundled MCP server) and
 //! app updates.
+//!
+//! Built with the `store` feature, it is the Microsoft Store (MSIX) build: the
+//! Store handles updates, and the MCP server script is copied out of the
+//! read-only package folder so Claude Code can run it.
 
 use launcher_core::api::ApiInfo;
 use launcher_core::{Launcher, Paths};
@@ -38,10 +42,21 @@ fn open_url(url: String) -> Result<(), String> {
 /// Path of the bundled MCP server script, for the "Connect Claude Code" command.
 #[tauri::command]
 fn mcp_server_path(app: tauri::AppHandle) -> Result<String, String> {
-    let p = app
+    let bundled = app
         .path()
         .resolve("mcp/mio-craft-mcp.mjs", tauri::path::BaseDirectory::Resource)
         .map_err(|e| e.to_string())?;
+    // A Store install lives in a locked WindowsApps folder whose path changes with
+    // every update, so give Claude Code a copy in the data folder instead.
+    let p = if cfg!(feature = "store") {
+        let state = app.state::<AppState>();
+        let copy = state.data_dir.join("mcp").join("mio-craft-mcp.mjs");
+        std::fs::create_dir_all(copy.parent().unwrap()).map_err(|e| e.to_string())?;
+        std::fs::copy(&bundled, &copy).map_err(|e| e.to_string())?;
+        copy
+    } else {
+        bundled
+    };
     // Strip Windows' verbatim prefix so the path pastes cleanly into a terminal.
     let s = p.to_string_lossy().to_string();
     Ok(s.strip_prefix(r"\\?\").unwrap_or(&s).to_string())
@@ -63,7 +78,8 @@ struct UpdateInfo {
 /// development builds (there is no installed app to replace).
 #[tauri::command]
 async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
-    if cfg!(debug_assertions) {
+    // Development builds have no installed app to replace, and the Store updates Store installs.
+    if cfg!(debug_assertions) || cfg!(feature = "store") {
         return Ok(None);
     }
     let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
@@ -73,6 +89,9 @@ async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, Strin
 /// Download the newest release, check its signature, install it and restart.
 #[tauri::command]
 async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    if cfg!(feature = "store") {
+        return Err("This copy of MioCraft is updated by the Microsoft Store.".into());
+    }
     if let Some(l) = app.try_state::<Launcher>() {
         if !l.processes.running().await.is_empty() {
             return Err("Close the game and any test client before updating.".into());
