@@ -153,8 +153,10 @@ launcher, go to **Settings → Claude Code** and press **Connect
 automatically**. Or run the command it shows, which looks like this:
 
 ```
-claude mcp add --scope user mio-craft -- node "C:\Program Files\MioCraft\mcp\mio-craft-mcp.mjs"
+claude mcp add --scope user mio-craft -- node "C:\Users\<you>\AppData\Local\MioCraft\mcp\mio-craft-mcp.mjs"
 ```
+
+The exact path depends on where MioCraft is installed, so copy it from Settings.
 
 Keep the launcher open while Claude Code works. Then ask something like:
 
@@ -223,6 +225,32 @@ use their own approved Azure app instead by entering its client ID under
   Forge on 1.7.10, 1.12.2 (RetroFuturaGradle) and 1.17 and newer (from Forge's
   own MDK). There are no templates for Legacy Fabric instances; they can still
   play and use mods from the browser.
+
+## Microsoft Store build
+
+The **Build** workflow's `msix` job also makes an unsigned MSIX for the Microsoft
+Store (download it from the run's artifacts; the Store signs it on submission).
+It's built with the `store` feature, which turns off the self-updater (the Store
+updates Store installs) and copies the MCP server script to
+`%APPDATA%\MioCraft\mcp\` so Claude Code has a stable path to it.
+
+The package manifest is `src-tauri/msix/AppxManifest.xml`. It declares the
+`unvirtualizedResources` capability and turns off AppData write virtualization,
+so `%APPDATA%\MioCraft` stays shared with Claude Code instead of becoming a
+private per-package copy. Partner Center asks why that capability is needed.
+
+Before the first submission, set these repository variables from Partner
+Center's **Product identity** page: `MSIX_IDENTITY_NAME` (Package/Identity/Name),
+`MSIX_PUBLISHER` (Package/Identity/Publisher, `CN=…`) and
+`MSIX_PUBLISHER_DISPLAY_NAME`. Without them the job makes a test package that
+the Store will reject.
+
+To build it locally on Windows:
+
+```
+npm run tauri -- build --no-bundle --features store
+pwsh .github/scripts/pack-msix.ps1
+```
 
 ## Developing
 
