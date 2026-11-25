@@ -101,10 +101,12 @@ struct UpdateInfo {
 }
 
 /// Look for a newer release. Returns nothing when up to date, and always in
-/// development builds (there is no installed app to replace).
+/// development builds (there is no installed app to replace). macOS and Linux
+/// builds are untested test files that releases and latest.json leave out, so
+/// they never look for updates either.
 #[tauri::command]
 async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
-    if cfg!(debug_assertions) {
+    if cfg!(debug_assertions) || !cfg!(windows) {
         return Ok(None);
     }
     let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;

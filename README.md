@@ -111,6 +111,13 @@ isn't code-signed, so Windows SmartScreen will warn the first time you run it.
 Every push is also built by the **Build** workflow on
 [GitHub Actions](https://github.com/Kokkogubben/mio-craft/actions).
 
+**macOS and Linux (untested):** each run of the Build workflow also makes a
+macOS `.dmg` (Apple silicon and Intel) and a Linux AppImage and `.deb`, as
+downloads on the run's page (`mio-craft-macos-untested`,
+`mio-craft-linux-untested`). They haven't been tried on real machines yet, so
+they aren't part of releases and don't update themselves. They're unsigned:
+on macOS, right-click the app → **Open** the first time.
+
 To build locally on Windows you need [Rust](https://rustup.rs), Node 18+ and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) (WebView2 is
 already on Windows 10/11):
