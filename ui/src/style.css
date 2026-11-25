@@ -3258,3 +3258,30 @@ div.cl-text {
   width: auto;
   max-width: 220px;
 }
+
+/* New instance: the way into "Build a modpack with Claude" */
+.claude-pack {
+  display: block;
+  width: 100%;
+  text-align: left;
+  margin: -4px 0 14px;
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.claude-pack:hover {
+  background: var(--hover, rgba(255, 255, 255, 0.04));
+}
+
+/* Mods tab: what the mod check found */
+.mod-problems {
+  margin-bottom: 12px;
+}
+.mod-problems ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}

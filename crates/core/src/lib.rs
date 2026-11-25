@@ -27,6 +27,7 @@ pub mod loaders;
 pub mod logfiles;
 pub mod storage;
 pub mod maven;
+pub mod mod_check;
 pub mod mod_sets;
 pub mod modpack;
 pub mod mods;

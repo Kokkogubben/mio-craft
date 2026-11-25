@@ -107,7 +107,7 @@ pub async fn connect(mcp_script: &str) -> Result<()> {
     Ok(())
 }
 
-fn loader_label(l: Loader) -> &'static str {
+pub(crate) fn loader_label(l: Loader) -> &'static str {
     match l {
         Loader::Vanilla => "vanilla",
         other => other.display_name(),
@@ -131,6 +131,53 @@ pub fn new_mod_prompt(inst: &Instance, idea: &str) -> String {
         lv = inst.loader_version.clone().unwrap_or_default(),
         idea = idea.trim(),
     )
+}
+
+/// What the user asked for in "Build a modpack with Claude".
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct ModpackRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Minecraft version; Claude picks one when empty.
+    #[serde(default)]
+    pub mc_version: Option<String>,
+    /// Claude picks Fabric or NeoForge when empty.
+    #[serde(default)]
+    pub loader: Option<Loader>,
+}
+
+/// Prompt for building a whole modpack: a new instance, mods found online, checked and test-launched.
+pub fn modpack_prompt(idea: &str, r: &ModpackRequest) -> Result<String> {
+    let mc = r.mc_version.as_deref().map(str::trim).filter(|v| !v.is_empty());
+    if let Some(v) = mc {
+        if v.len() > 32 || !v.chars().all(|c| c.is_ascii_alphanumeric() || ".-_ ".contains(c)) {
+            bail!("That doesn't look like a Minecraft version");
+        }
+    }
+    let loader = r.loader.filter(|l| *l != Loader::Vanilla);
+    let name: String = r.name.as_deref().unwrap_or("").chars().filter(|c| !c.is_control()).take(60).collect::<String>().trim().to_string();
+    let target = match (mc, loader) {
+        (Some(v), Some(l)) => format!("Use Minecraft {v} with {}.", loader_label(l)),
+        (Some(v), None) => format!("Use Minecraft {v}; pick the loader (Fabric or NeoForge) that has the best mods for this."),
+        (None, Some(l)) => format!("Use {}; pick the Minecraft version where the key mods for this are available (list_minecraft_versions, then check with search_online_mods).", loader_label(l)),
+        (None, None) => "Pick the Minecraft version and loader (Fabric or NeoForge) that suit these mods best: check with search_online_mods that the key mods exist for it before creating the instance.".into(),
+    };
+    let name = if name.is_empty() { "a short name that fits the pack".to_string() } else { format!("\"{name}\"") };
+    Ok(format!(
+        "Build me a Minecraft modpack in MioCraft. What I want: {idea} \
+         {target} \
+         Use the mio-craft MCP tools: 1) create_instance with {name}. \
+         2) Find the mods with search_online_mods and add each with install_online_mod (it installs required dependencies too). \
+         Prefer popular, maintained mods, don't add two mods that do the same job, and keep to what I described. \
+         3) Run check_mods and fix every problem it reports (install what's missing, or turn mods off with set_mod_enabled), then run it again until it's clean. \
+         4) Start the game once with launch_game to check that the pack loads: follow read_game_log until the title screen or a crash \
+         (read_game_log with kind crash), fix what's wrong, and stop_game once it has loaded. \
+         5) Tell me which mods you installed and why, and anything you left out. {NO_TOOLS}",
+        idea = {
+            let i = idea.trim();
+            if i.ends_with(['.', '!', '?']) { i.to_string() } else { format!("{i}.") }
+        },
+    ))
 }
 
 /// Prompt for changing an existing mod project.
@@ -257,6 +304,18 @@ mod tests {
             icon_image: None,
             launch: Default::default(),
         }
+    }
+
+    #[test]
+    fn modpack_prompts() {
+        let p = modpack_prompt(" A cozy farming pack ", &ModpackRequest { name: Some("Cozy".into()), mc_version: Some("1.21.1".into()), loader: Some(Loader::Fabric) }).unwrap();
+        assert!(p.contains("What I want: A cozy farming pack. Use Minecraft 1.21.1 with Fabric."), "{p}");
+        assert!(p.contains("create_instance with \"Cozy\""));
+        assert!(p.contains("check_mods"));
+        let p = modpack_prompt("x", &ModpackRequest::default()).unwrap();
+        assert!(p.contains("Pick the Minecraft version and loader"));
+        assert!(p.contains("a short name that fits the pack"));
+        assert!(modpack_prompt("x", &ModpackRequest { mc_version: Some("1.21; rm -rf".into()), ..Default::default() }).is_err());
     }
 
     #[test]

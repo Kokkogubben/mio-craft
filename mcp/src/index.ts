@@ -156,6 +156,21 @@ server.registerTool(
 );
 
 server.registerTool(
+  "check_mods",
+  {
+    description:
+      "Check an instance's enabled mods without starting the game: required mods that are missing, mods made for another loader, and mods installed twice. Mods bundled inside other jars count as installed. Version ranges aren't checked, so a test launch is still worth it.",
+    inputSchema: { instance_id: z.string() },
+  },
+  async ({ instance_id }) =>
+    run(async () => {
+      const r = await call<{ checked: number; problems: { message: string; file: string }[] }>("GET", `/instances/${enc(instance_id)}/mod-check`);
+      if (!r.problems.length) return `Checked ${r.checked} mods: no problems found.`;
+      return { checked: r.checked, problems: r.problems.map((p) => ({ file: p.file, problem: p.message })) };
+    }),
+);
+
+server.registerTool(
   "set_mod_enabled",
   {
     description: "Enable or disable a mod in an instance by its file name (from list_mods).",

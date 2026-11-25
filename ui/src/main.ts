@@ -191,6 +191,8 @@ const S = {
   modFilter: "",
   /** The selected instance's mod sets, once loaded. */
   modSets: null as null | ModSetsView,
+  /** Problems the mod check found in the selected instance (missing, wrong loader, twice). */
+  modCheck: null as null | { for: string; problems: { file: string; message: string }[] },
   makeIdea: "",
   crash: null as null | {
     instance_id: string;
@@ -312,6 +314,14 @@ async function loadInstanceData() {
     ]);
     S.mods = mods;
     S.modSets = sets && { ...sets, for: inst.id };
+    // Opens every jar, so it comes in after the list instead of holding it up.
+    if (inst.loader !== "vanilla")
+      api<{ problems: { file: string; message: string }[] }>("GET", `/instances/${enc(inst.id)}/mod-check`)
+        .then((r) => {
+          S.modCheck = { for: inst.id, problems: r.problems };
+          if (S.selected === inst.id && S.tab === "mods") renderMain();
+        })
+        .catch(() => {});
     S.projects = projects;
     S.crash = crash;
     S.shaders =
@@ -855,11 +865,22 @@ function modsTab(inst: Instance): string {
       ${updatesButton(inst)}
       <button class="btn ghost" data-action="open-path" data-path="${esc(inst.mods_dir)}">Open mods folder</button>
     </div>
+    ${modProblems(inst)}
     ${
       S.mods.length
         ? `<div class="mod-list">${rows || '<p class="muted pad">No mods match.</p>'}</div>`
         : `<div class="note">No mods yet. Drop .jar files into the mods folder, or ask Claude Code to make one, for example: <code>Make a ${loaderLabel(inst.loader)} mod for my "${esc(inst.name)}" instance that makes ores glow</code></div>`
     }`;
+}
+
+function modProblems(inst: Instance): string {
+  const c = S.modCheck;
+  if (!c || c.for !== inst.id || !c.problems.length) return "";
+  const n = c.problems.length;
+  return `<div class="note err mod-problems">
+      <strong>${n === 1 ? "1 problem" : `${n} problems`} with these mods</strong>
+      <ul>${c.problems.map((p) => `<li>${esc(p.message)}</li>`).join("")}</ul>
+    </div>`;
 }
 
 // ---------- mod sets ----------
@@ -1667,9 +1688,51 @@ function closeModal() {
   root.innerHTML = "";
 }
 
+/** Describe a pack; Claude Code creates the instance, finds the mods, checks them and test-launches it. */
+function modpackModal() {
+  openModal(`
+    <h2>✦ Build a modpack with Claude</h2>
+    <p class="muted small">Claude Code makes a new instance, finds the mods on Modrinth or CurseForge, checks that nothing is missing, and starts the game once to make sure it loads.</p>
+    <label class="field"><span>What should the pack be?</span><textarea id="mp-idea" class="input" rows="4" placeholder="e.g. A cozy farming pack with better animals, cooking and seasons, and good performance"></textarea></label>
+    <label class="field"><span>Name</span><input id="mp-name" class="input" maxlength="60" placeholder="Claude picks one"/></label>
+    <div class="row">
+      <label class="field grow"><span>Minecraft version</span><select id="mp-mc" class="input"><option value="">Claude picks</option></select></label>
+      <label class="field grow"><span>Mod loader</span><select id="mp-loader" class="input"><option value="">Claude picks</option><option value="fabric">Fabric</option><option value="neoforge">NeoForge</option><option value="forge">Forge</option><option value="quilt">Quilt</option></select></label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" data-action="close-modal">Cancel</button>
+      <button class="btn ghost" id="mp-copy">Copy prompt</button>
+      <button class="btn primary" id="mp-open">Open in Claude Code</button>
+    </div>`);
+  $<HTMLTextAreaElement>("#mp-idea").focus();
+  api<{ versions: { id: string }[] }>("GET", "/versions")
+    .then((vs) => {
+      const sel = document.querySelector<HTMLSelectElement>("#mp-mc");
+      if (sel) sel.insertAdjacentHTML("beforeend", vs.versions.slice(0, 60).map((v) => `<option>${esc(v.id)}</option>`).join(""));
+    })
+    .catch(() => {});
+  const go = async (dryRun: boolean) => {
+    const request = $<HTMLTextAreaElement>("#mp-idea").value;
+    if (!request.trim()) {
+      toast("Describe the pack first", "err");
+      return $<HTMLTextAreaElement>("#mp-idea").focus();
+    }
+    const modpack = {
+      name: $<HTMLInputElement>("#mp-name").value.trim() || null,
+      mc_version: $<HTMLSelectElement>("#mp-mc").value || null,
+      loader: $<HTMLSelectElement>("#mp-loader").value || null,
+    };
+    if (!dryRun) closeModal();
+    await openClaude({ request, modpack }, dryRun);
+  };
+  $("#mp-open").addEventListener("click", () => go(false));
+  $("#mp-copy").addEventListener("click", () => go(true));
+}
+
 async function newInstanceModal() {
   openModal(`
     <h2>New instance</h2>
+    <button type="button" class="claude-pack" id="ni-claude">✦ Or describe a modpack and let Claude build it…</button>
     <label class="field"><span>Name</span><input id="ni-name" class="input" placeholder="My modpack"/></label>
     <div class="field"><span>Mod loader</span>
       <div class="seg wrap" id="ni-loader">
@@ -1687,6 +1750,7 @@ async function newInstanceModal() {
       <button class="btn primary" id="ni-create">Create and install</button>
     </div>`);
 
+  $("#ni-claude").addEventListener("click", modpackModal);
   const mc = $<HTMLSelectElement>("#ni-mc");
   const lv = $<HTMLSelectElement>("#ni-lv");
   const hint = $("#ni-hint");
@@ -3098,7 +3162,10 @@ document.addEventListener("contextmenu", (ev) => {
   showMenu(ev.clientX, ev.clientY, items, `${inst.name} actions`);
 });
 
-async function openClaude(body: { instance_id?: string; project_id?: string; request: string; crash?: boolean }, dryRun = false) {
+async function openClaude(
+  body: { instance_id?: string; project_id?: string; request: string; crash?: boolean; modpack?: { name: string | null; mc_version: string | null; loader: string | null } },
+  dryRun = false,
+) {
   if (!body.request.trim() && !body.crash) {
     toast("Describe what you want first", "err");
     return;

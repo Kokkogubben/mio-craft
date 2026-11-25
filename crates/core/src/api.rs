@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, logfiles, mod_sets, modpack, instances, launch, loaders, mods, mojang, outfit, process, servers, projects, scene, shaders, storage, Launcher};
+use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, logfiles, mod_check, mod_sets, modpack, instances, launch, loaders, mods, mojang, outfit, process, servers, projects, scene, shaders, storage, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -94,6 +94,7 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}", get(get_instance).patch(patch_instance).delete(delete_instance))
         .route("/instances/{id}/install", post(install_instance))
         .route("/instances/{id}/duplicate", post(duplicate_instance))
+        .route("/instances/{id}/mod-check", get(check_mods))
         .route("/instances/{id}/mod-sets", get(list_mod_sets).post(create_mod_set))
         .route("/instances/{id}/mod-sets/switch", post(switch_mod_set))
         .route("/instances/{id}/mod-sets/rename", post(rename_mod_set))
@@ -257,6 +258,10 @@ async fn account_skin(State(s): State<AppState>, Path(id): Path<String>) -> std:
 async fn worn_cape(State(s): State<AppState>, Path(id): Path<String>) -> std::result::Result<Response, ApiError> {
     let png = outfit::worn_cape(&s.l, &id).await?;
     Ok(([("content-type", "image/png"), ("cache-control", "no-store")], png).into_response())
+}
+
+async fn check_mods(State(s): State<AppState>, Path(id): Path<String>) -> R<mod_check::Report> {
+    Ok(Json(mod_check::check(&s.l, &id).await?))
 }
 
 #[derive(Deserialize)]
@@ -669,6 +674,9 @@ struct OpenBody {
     /// Only build the prompt (for "Copy prompt").
     #[serde(default)]
     dry_run: bool,
+    /// Build a whole modpack from `request` instead.
+    #[serde(default)]
+    modpack: Option<claude_code::ModpackRequest>,
 }
 
 /// Build the prompt and try to open Claude Code with it. Always returns the
@@ -678,6 +686,7 @@ async fn claude_open(State(s): State<AppState>, Json(b): Json<OpenBody>) -> R<Va
         return Err(anyhow::anyhow!("describe what you want first").into());
     }
     let (prompt, cwd) = match (&b.project_id, &b.instance_id) {
+        _ if b.modpack.is_some() => (claude_code::modpack_prompt(&b.request, b.modpack.as_ref().unwrap())?, s.l.paths.projects()),
         (None, Some(iid)) if b.crash => {
             let i = instances::get(&s.l, iid).await?;
             let c = crash::latest(&s.l, &i).await?.ok_or_else(|| anyhow::anyhow!("no recent crash for this instance"))?;

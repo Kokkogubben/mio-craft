@@ -45,6 +45,7 @@ MioCraft does three things:
 - **Desktop shortcuts** (Windows): right-click an instance → **Create desktop shortcut**. The shortcut has the instance's icon and plays it; if MioCraft is already open, it uses that window instead of opening a second one
 - **Launch options per instance**: in **Edit**, pick the game window size or fullscreen, and under **Advanced launch options** a command to run before the game starts (it must succeed; its output goes to the Console) and environment variables. Modpack exports leave these out and imports never set them
 - **Mod sets**: in the Mods tab, save the mods that are on as a set ("Full", "Light") and switch between sets with one pick. Sets remember mods by project or mod id, so updates don't break them; a mod you add joins the set you're in. Switching waits until the game is closed
+- **Mod check**: the Mods tab warns about required mods that are missing (mods bundled inside other jars count), mods made for another loader, and the same mod installed twice
 - **Servers** tab: the instance's multiplayer list (the same `servers.dat` the game uses, so changes show up in game too). Add, edit and remove servers, and press **Join** to start the game straight into a server
 - **Copy game settings** between instances: keybinds (mods’ too), video, sound, accessibility, chat, skin parts and language, from another instance, the Minecraft Launcher or an `options.txt` file. Each instance keeps its other settings, keybinds are converted between the pre-1.13 and current formats, and the old file is kept as `options.txt.bak`
 - **Java downloaded automatically**: the launcher fetches the Java version each Minecraft version needs
@@ -68,10 +69,11 @@ MioCraft does three things:
 **Claude Code**
 
 - **Make a mod with Claude**: describe a mod in the launcher and it opens Claude Code with your idea and the instance ready; "Ask Claude" does the same for changing an existing mod. Mod templates exist for **Fabric, Quilt, NeoForge and Forge** instances (Forge 1.7.10, 1.12.2, and 1.17 and newer)
+- **Build a modpack with Claude**: in **New instance**, describe a pack. Claude Code makes the instance, finds the mods on Modrinth or CurseForge, checks them and starts the game once to make sure it loads
 - **Ask Claude to fix** on the crash banner opens Claude Code with the crash details
 - **Live mode** (experimental, Fabric on Minecraft 26.x): change the game while it runs: hotswap code, add new blocks and items with live textures, and an experimental mode that registers real content mid-game. Each part is a toggle in the instance's settings
 - **Gradle downloaded automatically**, so you don't need to install anything to build mods
-- **MCP server for Claude Code** with 31 tools: create instances and mods, build, install, run a test client, read logs and crash reports
+- **MCP server for Claude Code** with 32 tools: create instances and mods, build, install, run a test client, read logs and crash reports
 
 ## How it fits together
 
@@ -210,6 +212,7 @@ use their own approved Azure app instead by entering its client ID under
 | `list_instances`, `create_instance` | See or make instances (downloads Minecraft, the loader and Java) |
 | `list_minecraft_versions`, `list_loader_versions` | Available versions |
 | `list_mods`, `set_mod_enabled` | An instance's mod list |
+| `check_mods` | Missing required mods, mods for another loader, and mods installed twice, without starting the game |
 | `search_online_mods`, `install_online_mod` | Find and install Modrinth / CurseForge mods (with required dependencies), or shader packs with `kind: "shader"` |
 | `check_mod_updates`, `update_mods` | Update browser-installed mods |
 | `export_modpack` | Export an instance as a `.mrpack` |
