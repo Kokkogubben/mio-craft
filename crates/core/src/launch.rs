@@ -358,36 +358,29 @@ pub async fn launch(l: &Launcher, instance_id: &str, account_id: Option<&str>, s
     instances::save(l, &inst).await?;
 
     let log = l.paths.instance_dir(&inst.id).join("launcher-output.log");
-    // Record how the game exits so crashes can be shown after a restart.
-    let mut rx = l.events.subscribe();
     let source = game_source(&inst.id);
-    let watcher = {
-        let (l2, id, source) = (l.clone(), inst.id.clone(), source.clone());
-        tokio::spawn(async move {
-            while let Ok(ev) = rx.recv().await {
-                if let crate::Event::ProcessExited { source: s, code } = ev {
-                    if s == source {
-                        if let Ok(mut i) = instances::get(&l2, &id).await {
-                            i.last_exit = Some(instances::LastExit { code, at: now_secs() });
-                            let _ = instances::save(&l2, &i).await;
-                            if code.map(|c| c != 0).unwrap_or(false) {
-                                l2.emit(crate::Event::InstancesChanged);
-                            }
-                            // Save hotswapped code into the mod jars now the files are unlocked.
-                            crate::projects::install_pending(&l2, &id).await;
-                        }
-                        break;
-                    }
-                }
-            }
-        })
-    };
-    if let Err(e) = process::spawn_tracked(l, &source, cmd, log, vec![account.mc_token.clone()]).await {
-        watcher.abort();
-        return Err(e);
-    }
-
+    let started = now_secs();
+    let exited = process::spawn_tracked(l, &source, cmd, log, vec![account.mc_token.clone()]).await?;
+    // Record how the game exits (so crashes show after a restart) and how long it ran.
+    let (l2, id) = (l.clone(), inst.id.clone());
+    tokio::spawn(async move {
+        let code = exited.await.ok().flatten();
+        record_exit(&l2, &id, code, now_secs().saturating_sub(started)).await;
+        // Save hotswapped code into the mod jars now the files are unlocked.
+        crate::projects::install_pending(&l2, &id).await;
+    });
     Ok(())
+}
+
+/// After the game closes: its exit, and the time it ran added to the instance's playtime.
+pub(crate) async fn record_exit(l: &Launcher, id: &str, code: Option<i32>, ran_secs: u64) {
+    if let Ok(mut i) = instances::get(l, id).await {
+        i.last_exit = Some(instances::LastExit { code, at: now_secs() });
+        i.playtime_secs = i.playtime_secs.saturating_add(ran_secs);
+        let _ = instances::save(l, &i).await;
+        // The UI shows playtime, and a crash banner for a non-zero exit.
+        l.emit(crate::Event::InstancesChanged);
+    }
 }
 
 #[cfg(test)]
@@ -401,6 +394,23 @@ mod tests {
         assert_eq!(substitute("x${a}y${b}z", &v), "x1y${b}z");
         assert_eq!(substitute("${a", &v), "${a");
         assert_eq!(substitute("-Dp=${a}:${a}", &v), "-Dp=1:1");
+    }
+
+    #[tokio::test]
+    async fn adds_up_playtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let l = Launcher::new(crate::Paths::new(dir.path())).await.unwrap();
+        let inst = instances::create(&l, instances::NewInstance { name: Some("Time".into()), mc_version: "1.21.1".into(), loader: crate::loaders::Loader::Vanilla, loader_version: None, ram_mb: None })
+            .await
+            .unwrap();
+        record_exit(&l, &inst.id, Some(0), 90).await;
+        record_exit(&l, &inst.id, None, 30).await;
+        let i = instances::get(&l, &inst.id).await.unwrap();
+        assert_eq!(i.playtime_secs, 120);
+        assert_eq!(i.last_exit.unwrap().code, None);
+        // A copy starts from zero.
+        let copy = instances::duplicate(&l, &inst.id, None).await.unwrap();
+        assert_eq!(copy.playtime_secs, 0);
     }
 
     /// A window size goes through the version's resolution arguments where it has them.

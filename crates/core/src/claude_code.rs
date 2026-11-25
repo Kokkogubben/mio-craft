@@ -296,6 +296,7 @@ mod tests {
             jvm_args: None,
             created_at: 0,
             last_played: None,
+            playtime_secs: 0,
             last_exit: None,
             crash_dismissed_at: None,
             live: Default::default(),

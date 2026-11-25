@@ -549,7 +549,8 @@ pub async fn run_dev(l: &Launcher, id: &str) -> Result<()> {
     // stopping the dev client can close it.
     let cmd = gradle_command(l, &p, &["runClient", "--no-daemon"]).await?;
     let log = p.path.join("run").join("launcher-dev.log");
-    process::spawn_tracked(l, &dev_source(id), cmd, log, vec![]).await
+    process::spawn_tracked(l, &dev_source(id), cmd, log, vec![]).await?;
+    Ok(())
 }
 
 pub async fn dev_log(l: &Launcher, id: &str, lines: usize) -> Result<String> {

@@ -24,6 +24,9 @@ pub struct Instance {
     pub created_at: u64,
     #[serde(default)]
     pub last_played: Option<u64>,
+    /// Seconds the game has run, added up when it closes.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub playtime_secs: u64,
     /// How the game last exited (set when it stops).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_exit: Option<LastExit>,
@@ -118,6 +121,10 @@ impl LaunchOptions {
         }
         Ok(self)
     }
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,6 +236,7 @@ pub async fn create(l: &Launcher, req: NewInstance) -> Result<Instance> {
         jvm_args: None,
         created_at: now(),
         last_played: None,
+        playtime_secs: 0,
         last_exit: None,
         crash_dismissed_at: None,
         live: Default::default(),
@@ -309,6 +317,7 @@ pub async fn duplicate(l: &Launcher, id: &str, name: Option<String>) -> Result<I
         name,
         created_at: now(),
         last_played: None,
+        playtime_secs: 0,
         last_exit: None,
         crash_dismissed_at: None,
         ..src

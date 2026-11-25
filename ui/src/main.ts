@@ -23,6 +23,8 @@ interface Instance {
   mod_template_unsupported?: string | null;
   created_at: number;
   last_played: number | null;
+  /** Seconds the game has run in this instance. */
+  playtime_secs?: number;
   live?: LiveSettings;
   icon_color?: string | null;
   icon_glyph?: string | null;
@@ -267,6 +269,17 @@ function ago(ts: number): string {
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
   return `${Math.floor(s / 86400)} d ago`;
 }
+
+/** "45 min", "3 h 20 min", "120 h". */
+function fmtPlaytime(secs: number): string {
+  const m = Math.floor(secs / 60);
+  if (m < 1) return "under a minute";
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  return h >= 100 || m % 60 === 0 ? `${h} h` : `${h} h ${m % 60} min`;
+}
+
+const totalPlaytime = () => S.instances.reduce((n, i) => n + (i.playtime_secs ?? 0), 0);
 
 function toast(msg: string, kind: "ok" | "err" = "ok") {
   const el = document.createElement("div");
@@ -585,7 +598,7 @@ function instCard(i: Instance, action: string): string {
   const running = S.running.has(`game:${i.id}`);
   const when = running ? '<span class="dot" title="Running"></span>' : `<span class="muted small">${i.last_played ? ago(i.last_played) : "Never played"}</span>`;
   return `
-    <button class="icard ${i.id === S.selected ? "active" : ""}" data-action="${action}" data-id="${esc(i.id)}" title="${action === "pick-instance" ? "Double-click to open" : ""}">
+    <button class="icard ${i.id === S.selected ? "active" : ""}" data-action="${action}" data-id="${esc(i.id)}" title="${[i.playtime_secs ? `Played ${fmtPlaytime(i.playtime_secs)}` : "", action === "pick-instance" ? "Double-click to open" : ""].filter(Boolean).join(". ")}">
       ${instIcon(i)}
       <span class="inst-text">
         <span class="inst-name">${esc(i.name)}</span>
@@ -625,6 +638,7 @@ function renderHome() {
     <div class="recent">
       <div class="recent-head">
         <span class="recent-title">Recently played</span>
+        ${totalPlaytime() >= 60 ? `<span class="muted small" title="All instances together">${fmtPlaytime(totalPlaytime())} played in total</span>` : ""}
         <span class="grow"></span>
         <button class="btn small" data-action="new-instance">+ New</button>
         <button class="btn small" data-action="view" data-view="instances">View all</button>
@@ -698,6 +712,7 @@ function renderMain() {
           <span class="chip">Minecraft ${esc(inst.mc_version)}</span>
           <span class="chip ${esc(inst.loader)}">${loaderLabel(inst.loader)}${inst.loader_version ? ` ${esc(inst.loader_version)}` : ""}</span>
           ${inst.installed ? "" : '<span class="chip warn">Not installed</span>'}
+          ${inst.playtime_secs ? `<span class="chip" title="${esc(`${fmtPlaytime(totalPlaytime())} across all instances`)}">Played ${fmtPlaytime(inst.playtime_secs)}</span>` : ""}
           ${liveOn(inst) ? `<span class="chip live" title="Live mode is on for the next launch">⚡ Live${inst.live!.unfreeze_registries ? " · experimental" : ""}</span>` : ""}
         </div>
       </div>

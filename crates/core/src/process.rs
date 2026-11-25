@@ -78,7 +78,7 @@ pub async fn spawn_tracked(
     mut cmd: tokio::process::Command,
     log_file: PathBuf,
     secrets: Vec<String>,
-) -> Result<()> {
+) -> Result<oneshot::Receiver<Option<i32>>> {
     if l.processes.is_running(source).await {
         bail!("{source} is already running");
     }
@@ -123,6 +123,9 @@ pub async fn spawn_tracked(
 
     let l2 = l.clone();
     let source = source.to_string();
+    // The exit code, for callers that must not miss it (events can be dropped
+    // when a chatty game fills the event channel).
+    let (exit_tx, exit_rx) = oneshot::channel();
     tokio::spawn(async move {
         let code = tokio::select! {
             status = child.wait() => status.ok().and_then(|s| s.code()),
@@ -132,9 +135,10 @@ pub async fn spawn_tracked(
             }
         };
         l2.processes.inner.lock().await.remove(&source);
+        let _ = exit_tx.send(code);
         l2.emit(Event::ProcessExited { source, code });
     });
-    Ok(())
+    Ok(exit_rx)
 }
 
 /// Kill a child and everything it started. Gradle's start script is only the
