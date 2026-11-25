@@ -3196,3 +3196,43 @@ div.cl-text {
   gap: 6px;
   padding: 8px 0;
 }
+
+/* Edit instance: window and advanced launch options */
+.win-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.win-row select {
+  width: auto;
+}
+.win-size {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.win-size[hidden] {
+  display: none;
+}
+.win-size .input {
+  width: 92px;
+}
+.adv-launch {
+  margin: 4px 0 12px;
+}
+.adv-launch summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 0;
+}
+.adv-launch[open] summary {
+  margin-bottom: 8px;
+}
+.adv-launch p.small {
+  margin: -4px 0 10px;
+}
+.adv-launch textarea {
+  width: 100%;
+  resize: vertical;
+}

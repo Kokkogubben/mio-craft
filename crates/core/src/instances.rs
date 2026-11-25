@@ -42,6 +42,79 @@ pub struct Instance {
     /// A picture as a small PNG data URL; shown instead of the tile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon_image: Option<String>,
+    /// Window size, a command to run first and environment variables. Only Edit sets
+    /// these: a modpack import never does, and an export never includes them.
+    #[serde(default, skip_serializing_if = "LaunchOptions::is_empty")]
+    pub launch: LaunchOptions,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct EnvVar {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct LaunchOptions {
+    /// Game window size; both or neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fullscreen: bool,
+    /// A command run in the game folder before the game starts (`cmd` on Windows, `sh` elsewhere).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_launch: Option<String>,
+    /// Set for the game and the command before it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env: Vec<EnvVar>,
+}
+
+impl LaunchOptions {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// Tidied and checked, as saved from Edit.
+    pub fn normalized(mut self) -> Result<Self> {
+        match (self.width, self.height) {
+            (Some(w), Some(h)) => {
+                if !(320..=16384).contains(&w) || !(240..=16384).contains(&h) {
+                    anyhow::bail!("The window size should be between 320×240 and 16384×16384");
+                }
+            }
+            (None, None) => {}
+            _ => anyhow::bail!("Give the window both a width and a height, or neither"),
+        }
+        self.before_launch = self.before_launch.map(|c| c.trim().to_string()).filter(|c| !c.is_empty());
+        if let Some(c) = &self.before_launch {
+            if c.len() > 2000 || c.contains(['\0', '\n', '\r']) {
+                anyhow::bail!("The command before launch should be one line of at most 2000 characters");
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        self.env.retain(|e| !e.name.trim().is_empty() || !e.value.is_empty());
+        for e in &mut self.env {
+            e.name = e.name.trim().to_string();
+            let ok_name = e.name.len() <= 100
+                && e.name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                && e.name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+            if !ok_name {
+                anyhow::bail!("{:?} isn't a usable variable name: use letters, digits and _, not starting with a digit", e.name);
+            }
+            if e.value.len() > 8192 || e.value.contains('\0') {
+                anyhow::bail!("The value of {} is too long", e.name);
+            }
+            if !seen.insert(e.name.to_ascii_uppercase()) {
+                anyhow::bail!("{} is set twice", e.name);
+            }
+        }
+        if self.env.len() > 64 {
+            anyhow::bail!("At most 64 environment variables");
+        }
+        Ok(self)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,6 +232,7 @@ pub async fn create(l: &Launcher, req: NewInstance) -> Result<Instance> {
         icon_color: None,
         icon_glyph: None,
         icon_image: None,
+        launch: Default::default(),
     };
     tokio::fs::create_dir_all(l.paths.mods_dir(&inst.id)).await?;
     save(l, &inst).await?;
@@ -259,9 +333,10 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path, top: bool) -> Result<(
     Ok(())
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 pub struct InstancePatch {
     pub name: Option<String>,
+    pub launch: Option<LaunchOptions>,
     pub ram_mb: Option<u32>,
     pub jvm_args: Option<Vec<String>>,
     pub live: Option<crate::live::LiveSettings>,
@@ -309,6 +384,9 @@ pub async fn update(l: &Launcher, id: &str, p: InstancePatch) -> Result<Instance
             "picture",
         )?;
     }
+    if let Some(o) = p.launch {
+        inst.launch = o.normalized()?;
+    }
     if let Some(live) = p.live {
         let live = live.normalized();
         if live.any() {
@@ -325,6 +403,32 @@ pub async fn update(l: &Launcher, id: &str, p: InstancePatch) -> Result<Instance
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn checks_launch_options() {
+        use super::{EnvVar, LaunchOptions};
+        let ok = LaunchOptions {
+            width: Some(1280),
+            height: Some(720),
+            before_launch: Some("  echo hi  ".into()),
+            env: vec![EnvVar { name: " MY_VAR ".into(), value: "a b".into() }, EnvVar { name: "".into(), value: "".into() }],
+            ..Default::default()
+        }
+        .normalized()
+        .unwrap();
+        assert_eq!(ok.before_launch.as_deref(), Some("echo hi"));
+        assert_eq!(ok.env, vec![EnvVar { name: "MY_VAR".into(), value: "a b".into() }]);
+        let bad = |o: LaunchOptions| o.normalized().is_err();
+        assert!(bad(LaunchOptions { width: Some(800), ..Default::default() }));
+        assert!(bad(LaunchOptions { width: Some(10), height: Some(10), ..Default::default() }));
+        assert!(bad(LaunchOptions { before_launch: Some("a\nb".into()), ..Default::default() }));
+        for name in ["1X", "A-B", "A B", "A=B"] {
+            assert!(bad(LaunchOptions { env: vec![EnvVar { name: name.into(), value: "v".into() }], ..Default::default() }), "{name}");
+        }
+        let twice = vec![EnvVar { name: "Path".into(), value: "a".into() }, EnvVar { name: "PATH".into(), value: "b".into() }];
+        assert!(bad(LaunchOptions { env: twice, ..Default::default() }));
+        assert!(LaunchOptions::default().normalized().unwrap().is_empty());
+    }
+
     #[test]
     fn slugs() {
         assert_eq!(super::slug("My Cool  Pack!"), "my-cool-pack");

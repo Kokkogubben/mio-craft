@@ -27,6 +27,28 @@ interface Instance {
   icon_color?: string | null;
   icon_glyph?: string | null;
   icon_image?: string | null;
+  launch?: LaunchOptions;
+}
+
+/** Window size, a command before launch and environment variables (Edit only; never in modpacks). */
+interface LaunchOptions {
+  width?: number;
+  height?: number;
+  fullscreen?: boolean;
+  before_launch?: string;
+  env?: { name: string; value: string }[];
+}
+
+/** The env text box: one NAME=value per line. */
+function parseEnv(text: string): { name: string; value: string }[] {
+  return text
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .map((l) => {
+      const at = l.indexOf("=");
+      if (at < 0) throw new Error(`"${l.trim()}" needs a value: write it as NAME=value`);
+      return { name: l.slice(0, at).trim(), value: l.slice(at + 1) };
+    });
 }
 
 /** An instance's icon tile: its picture, or a glyph or letter on its colour. */
@@ -2552,6 +2574,7 @@ async function instanceModal(inst: Instance) {
   const status = await api<{ unsupported_reason: string | null }>("GET", `/instances/${enc(inst.id)}/live`).catch(() => ({ unsupported_reason: "Couldn't check live mode support." }));
   const L: LiveSettings = inst.live ?? { hotswap: false, content_slots: false, in_memory_textures: false, unfreeze_registries: false, slot_count: 64 };
   const off = !!status.unsupported_reason;
+  const LO: LaunchOptions = inst.launch ?? {};
   const toggle = (key: keyof LiveSettings, title: string, desc: string, extra = "") => `
     <label class="live-opt ${extra}">
       <span class="switch"><input type="checkbox" id="lv-${key}" ${L[key] ? "checked" : ""} ${off ? "disabled" : ""}/><span></span></span>
@@ -2582,6 +2605,27 @@ async function instanceModal(inst: Instance) {
     </div>
     <label class="field"><span>Memory (MB)</span><input id="ie-ram" type="number" min="1024" step="512" class="input" value="${esc(inst.ram_mb ?? S.cfg?.default_ram_mb ?? 4096)}"/></label>
     <label class="field"><span>Java arguments</span><input id="ie-jvm" class="input mono" placeholder="-XX:+UseG1GC" value="${esc((inst.jvm_args ?? S.cfg?.extra_jvm_args ?? []).join(" "))}"/></label>
+    <div class="field"><span>Window</span>
+      <div class="win-row">
+        <select id="ie-win" class="input">
+          <option value="default" ${!LO.fullscreen && !LO.width ? "selected" : ""}>Game default</option>
+          <option value="size" ${!LO.fullscreen && LO.width ? "selected" : ""}>Size</option>
+          <option value="full" ${LO.fullscreen ? "selected" : ""}>Fullscreen</option>
+        </select>
+        <span class="win-size" ${LO.fullscreen || !LO.width ? "hidden" : ""}>
+          <input id="ie-w" type="number" min="320" max="16384" class="input" aria-label="Width" value="${esc(LO.width ?? 1280)}"/>
+          <span class="muted">×</span>
+          <input id="ie-h" type="number" min="240" max="16384" class="input" aria-label="Height" value="${esc(LO.height ?? 720)}"/>
+        </span>
+      </div>
+    </div>
+    <details class="adv-launch" ${LO.before_launch || LO.env?.length ? "open" : ""}>
+      <summary>Advanced launch options</summary>
+      <label class="field"><span>Command before launch</span><input id="ie-pre" class="input mono" placeholder="e.g. a backup script" value="${esc(LO.before_launch ?? "")}"/></label>
+      <p class="muted small">Runs in the game folder each time you press Play; the game starts only if it succeeds. Its output shows in the Console. It can use INST_ID, INST_NAME, INST_DIR, INST_MC_DIR and INST_JAVA.</p>
+      <label class="field"><span>Environment variables</span><textarea id="ie-env" class="input mono" rows="3" spellcheck="false" placeholder="NAME=value, one per line">${esc((LO.env ?? []).map((e) => `${e.name}=${e.value}`).join("\n"))}</textarea></label>
+      <p class="muted small">Set for the game and the command. These stay on this computer: modpack exports leave them out, and imports never set them.</p>
+    </details>
     <div class="field"><span>Game settings</span>
       <div class="row-btn"><button type="button" class="btn small ghost" id="ie-copyset">Copy settings from…</button><span class="muted small">Keybinds, FOV, sound, accessibility and more, from another instance or Minecraft.</span></div>
     </div>
@@ -2637,6 +2681,9 @@ async function instanceModal(inst: Instance) {
       toast((e as Error).message, "err");
     }
   });
+  $<HTMLSelectElement>("#ie-win").addEventListener("change", (e) => {
+    $(".win-size").hidden = (e.target as HTMLSelectElement).value !== "size";
+  });
   if (S.busy.has(`dup:${inst.id}`)) ($("#ie-dup") as HTMLButtonElement).disabled = true;
   $("#ie-copyset").addEventListener("click", () => copySettingsModal(inst));
   $("#ie-dup").addEventListener("click", () => {
@@ -2647,6 +2694,16 @@ async function instanceModal(inst: Instance) {
     try {
       const ram = $<HTMLInputElement>("#ie-ram").value;
       const chk = (k: string) => $<HTMLInputElement>(`#lv-${k}`).checked;
+      const win = $<HTMLSelectElement>("#ie-win").value;
+      const num = (sel: string) => Math.round(Number($<HTMLInputElement>(sel).value)) || undefined;
+      const launch: LaunchOptions = {
+        fullscreen: win === "full",
+        width: win === "size" ? num("#ie-w") : undefined,
+        height: win === "size" ? num("#ie-h") : undefined,
+        before_launch: $<HTMLInputElement>("#ie-pre").value,
+        env: parseEnv($<HTMLTextAreaElement>("#ie-env").value),
+      };
+      if (win === "size" && (!launch.width || !launch.height)) throw new Error("Give the window a width and a height");
       const live: LiveSettings | undefined = off
         ? undefined
         : {
@@ -2672,6 +2729,7 @@ async function instanceModal(inst: Instance) {
         ram_mb: ram ? Number(ram) : undefined,
         jvm_args: $<HTMLInputElement>("#ie-jvm").value.split(/\s+/).filter(Boolean),
         live,
+        launch,
         icon_color: icon.icon_color,
         icon_glyph: icon.icon_glyph,
         icon_image: icon.icon_image,

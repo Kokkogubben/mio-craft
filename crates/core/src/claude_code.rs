@@ -255,6 +255,7 @@ mod tests {
             icon_color: None,
             icon_glyph: None,
             icon_image: None,
+            launch: Default::default(),
         }
     }
 

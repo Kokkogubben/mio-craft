@@ -496,6 +496,13 @@ mod tests {
             page_url: String::new(), as_dependency: false, download_url: None,
         });
         browse::save_tags(&l, &inst.id, &tags).await.unwrap();
+        // Launch options stay with this instance: never exported, never imported.
+        let opts = instances::LaunchOptions {
+            before_launch: Some("echo secret-command".into()),
+            env: vec![instances::EnvVar { name: "MY_TOKEN".into(), value: "secret-value".into() }],
+            ..Default::default()
+        };
+        instances::update(&l, &inst.id, instances::InstancePatch { launch: Some(opts), ..Default::default() }).await.unwrap();
         let all = export(&l, &inst.id, ExportOptions { version: Some("all".into()), include_config: false, include_other_jars: true }).await.unwrap();
         assert!(all.embedded.contains(&"manual".to_string()), "{:?}", all.embedded);
         assert!(!all.embedded.contains(&"cfmod".to_string()), "{:?}", all.embedded);
@@ -548,6 +555,11 @@ mod tests {
         assert!(g.join("mods/glow.jar").exists());
         assert_eq!(std::fs::read_to_string(g.join("config/glow.toml")).unwrap(), "brightness = 7");
         assert_eq!(imp.override_files, 2);
+        assert!(imp.instance.launch.is_empty());
+        let bytes = std::fs::read(&r.path).unwrap();
+        for secret in ["secret-command", "secret-value", "MY_TOKEN"] {
+            assert!(!bytes.windows(secret.len()).any(|w| w == secret.as_bytes()), "{secret} was exported");
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

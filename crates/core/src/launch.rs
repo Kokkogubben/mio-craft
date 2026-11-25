@@ -74,12 +74,96 @@ fn extract_natives(v: &VersionJson, libs: &Path, natives_dir: &Path) -> Result<(
 
 /// Does this version's launch arguments offer joining a server with Quick Play (1.20+)?
 fn has_quick_play(v: &VersionJson) -> bool {
+    has_feature(v, "is_quick_play_multiplayer")
+}
+
+/// Does one of the version's game arguments depend on this launcher feature?
+fn has_feature(v: &VersionJson, feature: &str) -> bool {
     v.arguments.as_ref().is_some_and(|a| {
         a.game.iter().any(|x| match x {
-            Argument::Ruled { rules, .. } => rules.iter().any(|r| r.features.as_ref().is_some_and(|f| f.contains_key("is_quick_play_multiplayer"))),
+            Argument::Ruled { rules, .. } => rules.iter().any(|r| r.features.as_ref().is_some_and(|f| f.contains_key(feature))),
             _ => false,
         })
     })
+}
+
+/// The game arguments for the instance's window: fullscreen, or a size through the
+/// version's own resolution arguments where it has them.
+fn window(v: &VersionJson, o: &instances::LaunchOptions, vars: &mut HashMap<&str, String>) -> (Vec<&'static str>, Vec<String>) {
+    if o.fullscreen {
+        return (vec![], vec!["--fullscreen".into()]);
+    }
+    let (Some(w), Some(h)) = (o.width, o.height) else { return (vec![], vec![]) };
+    if has_feature(v, "has_custom_resolution") {
+        vars.insert("resolution_width", w.to_string());
+        vars.insert("resolution_height", h.to_string());
+        (vec!["has_custom_resolution"], vec![])
+    } else {
+        (vec![], vec!["--width".into(), w.to_string(), "--height".into(), h.to_string()])
+    }
+}
+
+/// Run the instance's command before launch, with its output in the Console. The game
+/// starts only if it succeeds.
+pub(crate) async fn before_launch(l: &Launcher, inst: &instances::Instance, command: &str, java: &std::path::Path) -> Result<()> {
+    use tokio::io::AsyncBufReadExt;
+    let source = game_source(&inst.id);
+    let say = |line: String| l.emit(crate::Event::Log { source: source.clone(), line });
+    say(format!("[MioCraft] Running the command before launch: {command}"));
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = tokio::process::Command::new("cmd");
+        // /S: the command line is everything between the outer quotes, as typed.
+        c.args(["/D", "/S", "/C"]).raw_arg(format!("\"{command}\""));
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = tokio::process::Command::new("sh");
+        c.arg("-c").arg(command);
+        c
+    };
+    let game_dir = l.paths.game_dir(&inst.id);
+    tokio::fs::create_dir_all(&game_dir).await?;
+    cmd.current_dir(&game_dir)
+        .envs(inst.launch.env.iter().map(|e| (&e.name, &e.value)))
+        .env("INST_ID", &inst.id)
+        .env("INST_NAME", &inst.name)
+        .env("INST_DIR", l.paths.instance_dir(&inst.id))
+        .env("INST_MC_DIR", &game_dir)
+        .env("INST_JAVA", java)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    process::hide_window(&mut cmd);
+    let mut child = cmd.spawn().map_err(|e| anyhow!("Couldn't run the command before launch: {e}"))?;
+    let mut readers = vec![];
+    let outs: Vec<Box<dyn tokio::io::AsyncRead + Unpin + Send>> = vec![Box::new(child.stdout.take().unwrap()), Box::new(child.stderr.take().unwrap())];
+    for r in outs {
+        let (l, source) = (l.clone(), source.clone());
+        readers.push(tokio::spawn(async move {
+            let mut lines = tokio::io::BufReader::new(r).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                l.emit(crate::Event::Log { source: source.clone(), line });
+            }
+        }));
+    }
+    let status = match tokio::time::timeout(std::time::Duration::from_secs(10 * 60), child.wait()).await {
+        Ok(s) => s?,
+        Err(_) => {
+            let _ = child.kill().await;
+            anyhow::bail!("The command before launch took longer than 10 minutes and was stopped. The game wasn't started.");
+        }
+    };
+    for r in readers {
+        let _ = r.await;
+    }
+    if !status.success() {
+        let code = status.code().map(|c| c.to_string()).unwrap_or_else(|| "none".into());
+        anyhow::bail!("The command before launch failed (exit code {code}), so the game wasn't started. Its output is in the Console.");
+    }
+    Ok(())
 }
 
 /// The game arguments that join `server` straight away: Quick Play where the
@@ -166,10 +250,13 @@ pub async fn plan(
     vars.insert("classpath", cp.join(sep));
     vars.insert("classpath_separator", sep.into());
     vars.insert("library_directory", libs.to_string_lossy().into());
-    let (features, join_args) = match server {
+    let (mut features, mut join_args) = match server {
         Some(s) => join_server(&v, s, &mut vars),
         None => (vec![], vec![]),
     };
+    let (window_features, window_args) = window(&v, &inst.launch, &mut vars);
+    features.extend(window_features);
+    join_args.extend(window_args);
 
     let cfg = l.config.read().await.clone();
     let ram = inst.ram_mb.unwrap_or(cfg.default_ram_mb);
@@ -232,8 +319,12 @@ pub async fn launch(l: &Launcher, instance_id: &str, account_id: Option<&str>, s
     let account = auth::usable_account(l, account_id).await?;
     let plan = plan(l, &inst, &account, server).await?;
 
+    if let Some(c) = &inst.launch.before_launch {
+        before_launch(l, &inst, c, &plan.java).await?;
+    }
     let mut cmd = tokio::process::Command::new(&plan.java);
     cmd.args(&plan.args).current_dir(&plan.game_dir);
+    cmd.envs(inst.launch.env.iter().map(|e| (&e.name, &e.value)));
     // Mark the launch before starting, so a crash that happens instantly is
     // recorded after this, not overwritten by it.
     inst.last_played = Some(now_secs());
@@ -284,6 +375,56 @@ mod tests {
         assert_eq!(substitute("x${a}y${b}z", &v), "x1y${b}z");
         assert_eq!(substitute("${a", &v), "${a");
         assert_eq!(substitute("-Dp=${a}:${a}", &v), "-Dp=1:1");
+    }
+
+    /// A window size goes through the version's resolution arguments where it has them.
+    #[test]
+    fn sizes_the_window() {
+        let modern: VersionJson = serde_json::from_value(serde_json::json!({
+            "id": "1.21.1", "mainClass": "net.minecraft.client.main.Main",
+            "arguments": { "jvm": [], "game": [
+                "--username", "x",
+                { "rules": [{ "action": "allow", "features": { "has_custom_resolution": true } }], "value": ["--width", "${resolution_width}", "--height", "${resolution_height}"] },
+            ]}
+        }))
+        .unwrap();
+        let old: VersionJson = serde_json::from_value(serde_json::json!({ "id": "1.7.10", "mainClass": "M", "minecraftArguments": "--username x" })).unwrap();
+        let sized = instances::LaunchOptions { width: Some(1280), height: Some(720), ..Default::default() };
+        let mut vars = HashMap::new();
+        let (f, extra) = window(&modern, &sized, &mut vars);
+        assert!(extra.is_empty());
+        assert_eq!(expand(&modern.arguments.as_ref().unwrap().game, &vars, &f), vec!["--username", "x", "--width", "1280", "--height", "720"]);
+        assert_eq!(window(&old, &sized, &mut HashMap::new()).1, vec!["--width", "1280", "--height", "720"]);
+        let full = instances::LaunchOptions { fullscreen: true, ..sized };
+        assert_eq!(window(&modern, &full, &mut HashMap::new()), (vec![], vec!["--fullscreen".to_string()]));
+        assert_eq!(window(&modern, &Default::default(), &mut HashMap::new()), (vec![], vec![]));
+    }
+
+    /// The command before launch runs in the game folder with the instance's variables,
+    /// and a failing one stops the launch.
+    #[tokio::test]
+    async fn runs_the_command_before_launch() {
+        let dir = tempfile::tempdir().unwrap();
+        let l = Launcher::new(crate::Paths::new(dir.path())).await.unwrap();
+        let mut inst = instances::create(&l, instances::NewInstance { name: Some("Before".into()), mc_version: "1.21.1".into(), loader: crate::loaders::Loader::Vanilla, loader_version: None, ram_mb: None })
+            .await
+            .unwrap();
+        inst.launch.env = vec![instances::EnvVar { name: "MIO_TEST".into(), value: "hello there".into() }];
+        let mut rx = l.events.subscribe();
+        #[cfg(windows)]
+        let (ok, fail) = ("echo %INST_ID% %MIO_TEST%> out.txt && echo \"quoted & done\"", "exit /b 3");
+        #[cfg(not(windows))]
+        let (ok, fail) = ("echo $INST_ID $MIO_TEST > out.txt && echo '\"quoted & done\"'", "exit 3");
+        before_launch(&l, &inst, ok, std::path::Path::new("java")).await.unwrap();
+        let out = std::fs::read_to_string(l.paths.game_dir(&inst.id).join("out.txt")).unwrap();
+        assert_eq!(out.trim(), format!("{} hello there", inst.id));
+        let mut lines = vec![];
+        while let Ok(crate::Event::Log { line, .. }) = rx.try_recv() {
+            lines.push(line);
+        }
+        assert!(lines.iter().any(|l| l.contains("quoted & done")), "{lines:?}");
+        let e = before_launch(&l, &inst, fail, std::path::Path::new("java")).await.unwrap_err();
+        assert!(e.to_string().contains("exit code 3"), "{e}");
     }
 
     /// 1.20+ joins with Quick Play from the version's own arguments; older
