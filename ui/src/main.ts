@@ -2218,10 +2218,11 @@ async function askStorCleanAll(part: string) {
 // A full-window page that slides in over everything, with categories down the side. Every change
 // saves straight away.
 
-type SetCat = "claude" | "mods" | "discord" | "legacy" | "storage" | "about" | "dev";
+type SetCat = "claude" | "mods" | "playing" | "discord" | "legacy" | "storage" | "about" | "dev";
 const SET_CATS: [SetCat, string][] = [
   ["claude", "✦ Claude Code"],
   ["mods", "Mod browser"],
+  ["playing", "While playing"],
   ["discord", "Discord"],
   ["legacy", "Legacy"],
   ["storage", "Storage"],
@@ -2324,6 +2325,12 @@ function setCatHtml(cat: SetCat, cfg: any, info: { path: string; version: string
           <p class="muted small">Modrinth works out of the box. CurseForge needs a free API key from <button class="link" data-action="open-url" data-url="https://console.curseforge.com/">console.curseforge.com</button>.</p>
           <label class="field"><span>CurseForge API key</span><input id="set-cf" type="password" class="input mono" placeholder="Not set" value="${esc(cfg.curseforge_api_key ?? "")}"/></label>
         </section>`;
+    case "playing":
+      return `
+        <h2>While playing</h2>
+        <section class="settings-sec">
+          ${setSwitch("set-minimize", !!cfg.minimize_while_playing, "Minimize MioCraft while I play", "The launcher gets out of the way when a game starts and comes back when the game closes or crashes.")}
+        </section>`;
     case "discord":
       return `
         <h2>Discord</h2>
@@ -2418,6 +2425,8 @@ document.addEventListener("change", (ev) => {
   switch (t.id) {
     case "set-discord":
       return void saveSetting({ discord_rpc: t.checked });
+    case "set-minimize":
+      return void saveSetting({ minimize_while_playing: t.checked });
     case "set-stylized":
       return void saveSetting({ stylized: t.checked });
     case "set-legacy-look":

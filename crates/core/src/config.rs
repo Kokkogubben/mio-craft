@@ -28,6 +28,8 @@ pub struct Config {
     /// The pixel font and pixel-art buttons and frames of the new look. Off, the new layout keeps
     /// the original font and plain controls.
     pub stylized: bool,
+    /// Minimize the launcher window while a game runs and bring it back when the game closes.
+    pub minimize_while_playing: bool,
 }
 
 impl Default for Config {
@@ -43,6 +45,7 @@ impl Default for Config {
             legacy_look: false,
             legacy_colors: false,
             stylized: true,
+            minimize_while_playing: false,
         }
     }
 }
@@ -73,6 +76,7 @@ pub struct ConfigPatch {
     pub legacy_look: Option<bool>,
     pub legacy_colors: Option<bool>,
     pub stylized: Option<bool>,
+    pub minimize_while_playing: Option<bool>,
 }
 
 impl Config {
@@ -108,6 +112,9 @@ impl Config {
         }
         if let Some(v) = p.stylized {
             self.stylized = v;
+        }
+        if let Some(v) = p.minimize_while_playing {
+            self.minimize_while_playing = v;
         }
     }
 }

@@ -56,6 +56,7 @@ MioCraft does three things:
 - **Console** tab with the live log, older logs and crash reports, search, filters for game, build and test-client output, and jumps between errors. Plus a **crash helper**: when the game crashes, a banner shows what went wrong and which mods were involved, and opens the report
 - **Storage** in Settings: how much space instances, Minecraft versions, game assets, Java and mod project builds take, and removing what nothing uses any more (always asks first, with the size)
 - **First-run setup** that walks through connecting Claude Code, sign-in and CurseForge
+- **Minimize while playing** (optional, in Settings → While playing): the launcher minimizes when a game starts and comes back when it closes or crashes
 - **Discord status** (optional, off by default): shows the instance you're playing on your Discord profile
 - **Updates itself**: checks GitHub for a new release at startup, asks before installing, and only installs updates signed with the project's key
 - Small: a Tauri app (Rust + a web UI), not Electron

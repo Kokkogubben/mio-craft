@@ -54,6 +54,46 @@ fn create_shortcut(app: tauri::AppHandle, state: tauri::State<'_, AppState>, ins
     Ok(ShortcutResult { status: "created", path: path.to_string_lossy().to_string() })
 }
 
+/// Minimize the window when a game starts (if the setting is on) and bring it back when the
+/// last running game closes. Only windows this minimized are restored, so a launcher the
+/// player minimized by hand stays down.
+fn minimize_while_playing(app: tauri::AppHandle, launcher: Launcher) {
+    let mut rx = launcher.events.subscribe();
+    tauri::async_runtime::spawn(async move {
+        use launcher_core::Event;
+        use tokio::sync::broadcast::error::RecvError;
+        let mut running = std::collections::HashSet::new();
+        let mut minimized = false;
+        loop {
+            match rx.recv().await {
+                Ok(Event::ProcessStarted { source }) if source.starts_with("game:") => {
+                    running.insert(source);
+                    if minimized || !launcher.config.read().await.minimize_while_playing {
+                        continue;
+                    }
+                    if let Some(w) = app.get_webview_window("main") {
+                        if !w.is_minimized().unwrap_or(false) && w.minimize().is_ok() {
+                            minimized = true;
+                        }
+                    }
+                }
+                Ok(Event::ProcessExited { source, .. }) if source.starts_with("game:") => {
+                    running.remove(&source);
+                    if minimized && running.is_empty() {
+                        minimized = false;
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.unminimize();
+                            let _ = w.set_focus();
+                        }
+                    }
+                }
+                Ok(_) | Err(RecvError::Lagged(_)) => {}
+                Err(RecvError::Closed) => break,
+            }
+        }
+    });
+}
+
 #[tauri::command]
 fn get_api(state: tauri::State<'_, AppState>) -> ApiInfo {
     state.api.clone()
@@ -164,6 +204,7 @@ pub fn run() {
             .map_err(|e| e.to_string())?;
             let startup_play = Mutex::new(shortcut::play_arg(&std::env::args().collect::<Vec<_>>()));
             app.manage(AppState { api, data_dir: launcher.paths.root.clone(), startup_play });
+            minimize_while_playing(app.handle().clone(), launcher.clone());
             app.manage(launcher);
             Ok(())
         })
