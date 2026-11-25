@@ -58,7 +58,7 @@ MioCraft does three things:
 - **First-run setup** that walks through connecting Claude Code, sign-in and CurseForge
 - **Minimize while playing** (optional, in Settings → While playing): the launcher minimizes when a game starts and comes back when it closes or crashes
 - **Discord status** (optional, off by default): shows the instance you're playing on your Discord profile
-- **Updates itself**: checks GitHub for a new release at startup, asks before installing, and only installs updates signed with the project's key
+- **Updates itself**: checks GitHub for a new release at startup, asks before installing, and only installs updates signed with the project's key. Turn on **Stable versions only** in Settings → About to get only versions that have been out a while without known problems (see [STABLE.md](STABLE.md))
 - Small: a Tauri app (Rust + a web UI), not Electron
 
 **Mods**

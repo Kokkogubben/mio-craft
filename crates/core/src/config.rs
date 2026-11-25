@@ -30,6 +30,8 @@ pub struct Config {
     pub stylized: bool,
     /// Minimize the launcher window while a game runs and bring it back when the game closes.
     pub minimize_while_playing: bool,
+    /// Update only to versions marked stable (the `stable` GitHub release) instead of every release.
+    pub stable_updates: bool,
 }
 
 impl Default for Config {
@@ -46,6 +48,7 @@ impl Default for Config {
             legacy_colors: false,
             stylized: true,
             minimize_while_playing: false,
+            stable_updates: false,
         }
     }
 }
@@ -77,6 +80,7 @@ pub struct ConfigPatch {
     pub legacy_colors: Option<bool>,
     pub stylized: Option<bool>,
     pub minimize_while_playing: Option<bool>,
+    pub stable_updates: Option<bool>,
 }
 
 impl Config {
@@ -115,6 +119,9 @@ impl Config {
         }
         if let Some(v) = p.minimize_while_playing {
             self.minimize_while_playing = v;
+        }
+        if let Some(v) = p.stable_updates {
+            self.stable_updates = v;
         }
     }
 }

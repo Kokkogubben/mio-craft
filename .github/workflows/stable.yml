@@ -1,0 +1,30 @@
+name: Promote to stable
+
+# Makes a released version the stable one (see STABLE.md):
+#   gh workflow run stable.yml -f version=0.9.0
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Released version to make stable, e.g. 0.9.0"
+        required: true
+      allow_older:
+        description: "Allow going back to an older version than the current stable one"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Point the stable release at this version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+          ALLOW_OLDER: ${{ inputs.allow_older }}
+        run: node .github/scripts/promote-stable.mjs

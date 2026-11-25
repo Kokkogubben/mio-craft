@@ -169,8 +169,26 @@ async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, Strin
     if cfg!(debug_assertions) || !cfg!(windows) {
         return Ok(None);
     }
-    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    let update = updater(&app).await?.check().await.map_err(|e| e.to_string())?;
     Ok(update.map(|u| UpdateInfo { version: u.version.clone(), current_version: u.current_version.clone(), notes: u.body.clone() }))
+}
+
+/// The update file of the `stable` release: only versions that have been out a while
+/// without problems (see STABLE.md).
+const STABLE_ENDPOINT: &str = "https://github.com/Kokkogubben/mio-craft/releases/download/stable/latest.json";
+
+/// The updater for the channel picked in Settings: every release (tauri.conf.json), or stable only.
+async fn updater(app: &tauri::AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+    let stable = match app.try_state::<Launcher>() {
+        Some(l) => l.config.read().await.stable_updates,
+        None => false,
+    };
+    let mut b = app.updater_builder();
+    if stable {
+        let url = STABLE_ENDPOINT.parse::<tauri::Url>().map_err(|e| e.to_string())?;
+        b = b.endpoints(vec![url]).map_err(|e| e.to_string())?;
+    }
+    b.build().map_err(|e| e.to_string())
 }
 
 /// Download the newest release, check its signature, install it and restart.
@@ -181,9 +199,8 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
             return Err("Close the game and any test client before updating.".into());
         }
     }
-    let update = app
-        .updater()
-        .map_err(|e| e.to_string())?
+    let update = updater(&app)
+        .await?
         .check()
         .await
         .map_err(|e| e.to_string())?

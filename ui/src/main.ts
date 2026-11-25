@@ -2362,6 +2362,7 @@ function setCatHtml(cat: SetCat, cfg: any, info: { path: string; version: string
           <h3>Updates</h3>
           <p class="muted small">MioCraft ${esc(version ?? status.version)}. It checks GitHub for a new version when it starts and asks before installing.</p>
           <p><button class="btn small" data-action="check-update" ${inTauri ? "" : "disabled"}>Check for updates</button></p>
+          ${setSwitch("set-stable", !!cfg.stable_updates, "Stable versions only", "Update only to versions that have been out a while without known problems. Off, you get every new version as soon as it's released. If you're already on a newer version, you keep it until the stable one passes it.")}
         </section>
         <section class="settings-sec">
           <h3>Data folder</h3>
@@ -2427,6 +2428,8 @@ document.addEventListener("change", (ev) => {
       return void saveSetting({ discord_rpc: t.checked });
     case "set-minimize":
       return void saveSetting({ minimize_while_playing: t.checked });
+    case "set-stable":
+      return void saveSetting({ stable_updates: t.checked });
     case "set-stylized":
       return void saveSetting({ stylized: t.checked });
     case "set-legacy-look":
