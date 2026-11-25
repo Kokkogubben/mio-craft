@@ -75,7 +75,7 @@ jobs:
   # latest.json until they have been tried on real machines. Unsigned.
   macos:
     needs: test
-    if: ${{ !startsWith(github.ref, refs/tags/) }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -97,7 +97,7 @@ jobs:
 
   linux:
     needs: test
-    if: ${{ !startsWith(github.ref, refs/tags/) }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
     # The oldest supported runner, so the files run on older distributions too.
     runs-on: ubuntu-22.04
     steps:
