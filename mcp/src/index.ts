@@ -138,7 +138,9 @@ server.registerTool(
     run(async () => {
       let inst = await call<Json>("POST", "/instances", { name, mc_version, loader, loader_version });
       if (install !== false) inst = await call<Json>("POST", `/instances/${enc(String(inst.id))}/install`);
-      return inst;
+      // Launch options (a command, environment variables) are the user's own business.
+      const { launch: _launch, ...rest } = inst;
+      return rest;
     }),
 );
 

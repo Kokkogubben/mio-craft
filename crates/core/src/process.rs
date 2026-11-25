@@ -23,6 +23,21 @@ impl ProcessTable {
     pub async fn running(&self) -> Vec<String> {
         self.inner.lock().await.keys().cloned().collect()
     }
+    /// Take a source for work that isn't a tracked child yet (the command before
+    /// launch), so it counts as running and Stop reaches it. None if it's taken.
+    pub async fn claim(&self, source: &str) -> Option<oneshot::Receiver<()>> {
+        let mut m = self.inner.lock().await;
+        if m.contains_key(source) {
+            return None;
+        }
+        let (tx, rx) = oneshot::channel();
+        m.insert(source.to_string(), tx);
+        Some(rx)
+    }
+    /// Give back a claimed source, without an exit event.
+    pub async fn release(&self, source: &str) {
+        self.inner.lock().await.remove(source);
+    }
     /// Ask a process to stop (kills it).
     pub async fn stop(&self, source: &str) -> bool {
         match self.inner.lock().await.remove(source) {
@@ -125,7 +140,7 @@ pub async fn spawn_tracked(
 /// Kill a child and everything it started. Gradle's start script is only the
 /// top of a chain (script → Gradle → the game), and killing the script alone
 /// leaves the game window open on Windows.
-async fn kill_tree(child: &mut tokio::process::Child) {
+pub(crate) async fn kill_tree(child: &mut tokio::process::Child) {
     #[cfg(windows)]
     if let Some(pid) = child.id() {
         let mut cmd = tokio::process::Command::new("taskkill");
@@ -135,6 +150,11 @@ async fn kill_tree(child: &mut tokio::process::Child) {
             .stdin(Stdio::null());
         hide_window(&mut cmd);
         let _ = cmd.status().await;
+    }
+    // Children started with their own process group (the command before launch).
+    #[cfg(unix)]
+    if let Some(pid) = child.id() {
+        let _ = tokio::process::Command::new("kill").args(["-9", "--", &format!("-{pid}")]).status().await;
     }
     let _ = child.kill().await;
     let _ = child.wait().await;

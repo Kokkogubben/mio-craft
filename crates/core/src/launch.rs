@@ -104,8 +104,21 @@ fn window(v: &VersionJson, o: &instances::LaunchOptions, vars: &mut HashMap<&str
 }
 
 /// Run the instance's command before launch, with its output in the Console. The game
-/// starts only if it succeeds.
+/// starts only if it succeeds. It counts as the instance running while it runs, so
+/// Stop cancels it and nothing else (a second launch, mod changes) starts meanwhile.
 pub(crate) async fn before_launch(l: &Launcher, inst: &instances::Instance, command: &str, java: &std::path::Path) -> Result<()> {
+    let source = game_source(&inst.id);
+    let Some(stop) = l.processes.claim(&source).await else { anyhow::bail!("{} is already running", inst.name) };
+    l.emit(crate::Event::ProcessStarted { source: source.clone() });
+    let r = run_before_launch(l, inst, command, java, stop).await;
+    l.processes.release(&source).await;
+    if r.is_err() {
+        l.emit(crate::Event::ProcessExited { source, code: None });
+    }
+    r
+}
+
+async fn run_before_launch(l: &Launcher, inst: &instances::Instance, command: &str, java: &std::path::Path, stop: tokio::sync::oneshot::Receiver<()>) -> Result<()> {
     use tokio::io::AsyncBufReadExt;
     let source = game_source(&inst.id);
     let say = |line: String| l.emit(crate::Event::Log { source: source.clone(), line });
@@ -137,6 +150,9 @@ pub(crate) async fn before_launch(l: &Launcher, inst: &instances::Instance, comm
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     process::hide_window(&mut cmd);
+    // Its own process group, so stopping it also stops what it started.
+    #[cfg(unix)]
+    cmd.process_group(0);
     let mut child = cmd.spawn().map_err(|e| anyhow!("Couldn't run the command before launch: {e}"))?;
     let mut readers = vec![];
     let outs: Vec<Box<dyn tokio::io::AsyncRead + Unpin + Send>> = vec![Box::new(child.stdout.take().unwrap()), Box::new(child.stderr.take().unwrap())];
@@ -149,15 +165,25 @@ pub(crate) async fn before_launch(l: &Launcher, inst: &instances::Instance, comm
             }
         }));
     }
-    let status = match tokio::time::timeout(std::time::Duration::from_secs(10 * 60), child.wait()).await {
-        Ok(s) => s?,
-        Err(_) => {
-            let _ = child.kill().await;
+    let status = tokio::select! {
+        s = child.wait() => s?,
+        _ = stop => {
+            process::kill_tree(&mut child).await;
+            anyhow::bail!("The command before launch was stopped, so the game wasn't started.");
+        }
+        _ = tokio::time::sleep(std::time::Duration::from_secs(10 * 60)) => {
+            process::kill_tree(&mut child).await;
             anyhow::bail!("The command before launch took longer than 10 minutes and was stopped. The game wasn't started.");
         }
     };
+    // Something it left running in the background can keep its output open: read
+    // what's there, but don't wait for that.
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
     for r in readers {
-        let _ = r.await;
+        let abort = r.abort_handle();
+        if tokio::time::timeout_at(deadline, r).await.is_err() {
+            abort.abort();
+        }
     }
     if !status.success() {
         let code = status.code().map(|c| c.to_string()).unwrap_or_else(|| "none".into());
@@ -419,12 +445,48 @@ mod tests {
         let out = std::fs::read_to_string(l.paths.game_dir(&inst.id).join("out.txt")).unwrap();
         assert_eq!(out.trim(), format!("{} hello there", inst.id));
         let mut lines = vec![];
-        while let Ok(crate::Event::Log { line, .. }) = rx.try_recv() {
-            lines.push(line);
+        while let Ok(e) = rx.try_recv() {
+            if let crate::Event::Log { line, .. } = e {
+                lines.push(line);
+            }
         }
         assert!(lines.iter().any(|l| l.contains("quoted & done")), "{lines:?}");
         let e = before_launch(&l, &inst, fail, std::path::Path::new("java")).await.unwrap_err();
         assert!(e.to_string().contains("exit code 3"), "{e}");
+        let source = game_source(&inst.id);
+        assert!(!l.processes.is_running(&source).await);
+
+        // Something left running in the background doesn't hold up the launch.
+        #[cfg(windows)]
+        let bg = "start /b ping -n 8 127.0.0.1 >nul & echo started";
+        #[cfg(not(windows))]
+        let bg = "sleep 8 & echo started";
+        let t = std::time::Instant::now();
+        before_launch(&l, &inst, bg, std::path::Path::new("java")).await.unwrap();
+        assert!(t.elapsed() < std::time::Duration::from_secs(5), "{:?}", t.elapsed());
+
+        // While it runs the instance counts as running: a second one is refused, and Stop cancels it.
+        #[cfg(windows)]
+        let slow = "ping -n 30 127.0.0.1";
+        #[cfg(not(windows))]
+        let slow = "sleep 30";
+        let (l2, inst2) = (l.clone(), inst.clone());
+        let run = tokio::spawn(async move { before_launch(&l2, &inst2, slow, std::path::Path::new("java")).await });
+        for _ in 0..50 {
+            if l.processes.is_running(&source).await {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        assert!(l.processes.is_running(&source).await);
+        let e = before_launch(&l, &inst, ok, std::path::Path::new("java")).await.unwrap_err();
+        assert!(e.to_string().contains("already running"), "{e}");
+        let t = std::time::Instant::now();
+        assert!(l.processes.stop(&source).await);
+        let e = run.await.unwrap().unwrap_err();
+        assert!(e.to_string().contains("was stopped"), "{e}");
+        assert!(t.elapsed() < std::time::Duration::from_secs(10), "{:?}", t.elapsed());
+        assert!(!l.processes.is_running(&source).await);
     }
 
     /// 1.20+ joins with Quick Play from the version's own arguments; older

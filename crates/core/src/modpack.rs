@@ -556,9 +556,19 @@ mod tests {
         assert_eq!(std::fs::read_to_string(g.join("config/glow.toml")).unwrap(), "brightness = 7");
         assert_eq!(imp.override_files, 2);
         assert!(imp.instance.launch.is_empty());
-        let bytes = std::fs::read(&r.path).unwrap();
-        for secret in ["secret-command", "secret-value", "MY_TOKEN"] {
-            assert!(!bytes.windows(secret.len()).any(|w| w == secret.as_bytes()), "{secret} was exported");
+        // Every file in both packs, unpacked.
+        for pack in [&all.path, &r.path] {
+            let mut z = zip::ZipArchive::new(std::fs::File::open(pack).unwrap()).unwrap();
+            for i in 0..z.len() {
+                let mut f = z.by_index(i).unwrap();
+                let name = f.name().to_string();
+                assert!(!name.ends_with("instance.json"), "{name}");
+                let mut bytes = vec![];
+                f.read_to_end(&mut bytes).unwrap();
+                for secret in ["secret-command", "secret-value", "MY_TOKEN"] {
+                    assert!(!bytes.windows(secret.len()).any(|w| w == secret.as_bytes()), "{secret} was exported in {name}");
+                }
+            }
         }
     }
 
