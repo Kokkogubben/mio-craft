@@ -64,6 +64,15 @@ fn minimize_while_playing(app: tauri::AppHandle, launcher: Launcher) {
         use tokio::sync::broadcast::error::RecvError;
         let mut running = std::collections::HashSet::new();
         let mut minimized = false;
+        let restore = |app: &tauri::AppHandle| {
+            if let Some(w) = app.get_webview_window("main") {
+                // Leave it alone if the player already brought it back.
+                if w.is_minimized().unwrap_or(false) {
+                    let _ = w.unminimize();
+                    let _ = w.set_focus();
+                }
+            }
+        };
         loop {
             match rx.recv().await {
                 Ok(Event::ProcessStarted { source }) if source.starts_with("game:") => {
@@ -81,13 +90,24 @@ fn minimize_while_playing(app: tauri::AppHandle, launcher: Launcher) {
                     running.remove(&source);
                     if minimized && running.is_empty() {
                         minimized = false;
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.unminimize();
-                            let _ = w.set_focus();
-                        }
+                        restore(&app);
                     }
                 }
-                Ok(_) | Err(RecvError::Lagged(_)) => {}
+                // Missed events: ask which games are still running.
+                Err(RecvError::Lagged(_)) => {
+                    let mut still = std::collections::HashSet::new();
+                    for s in running.drain() {
+                        if launcher.processes.is_running(&s).await {
+                            still.insert(s);
+                        }
+                    }
+                    running = still;
+                    if minimized && running.is_empty() {
+                        minimized = false;
+                        restore(&app);
+                    }
+                }
+                Ok(_) => {}
                 Err(RecvError::Closed) => break,
             }
         }

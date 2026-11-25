@@ -345,22 +345,34 @@ pub async fn launch(l: &Launcher, instance_id: &str, account_id: Option<&str>, s
     let account = auth::usable_account(l, account_id).await?;
     let plan = plan(l, &inst, &account, server).await?;
 
+    let source = game_source(&inst.id);
     if let Some(c) = &inst.launch.before_launch {
         before_launch(l, &inst, c, &plan.java).await?;
     }
-    let mut cmd = tokio::process::Command::new(&plan.java);
-    cmd.args(&plan.args).current_dir(&plan.game_dir);
-    cmd.envs(inst.launch.env.iter().map(|e| (&e.name, &e.value)));
-    // Mark the launch before starting, so a crash that happens instantly is
-    // recorded after this, not overwritten by it.
-    inst.last_played = Some(now_secs());
-    inst.last_exit = None;
-    instances::save(l, &inst).await?;
-
-    let log = l.paths.instance_dir(&inst.id).join("launcher-output.log");
-    let source = game_source(&inst.id);
     let started = now_secs();
-    let exited = process::spawn_tracked(l, &source, cmd, log, vec![account.mc_token.clone()]).await?;
+    let spawned = async {
+        let mut cmd = tokio::process::Command::new(&plan.java);
+        cmd.args(&plan.args).current_dir(&plan.game_dir);
+        cmd.envs(inst.launch.env.iter().map(|e| (&e.name, &e.value)));
+        // Mark the launch before starting, so a crash that happens instantly is
+        // recorded after this, not overwritten by it.
+        inst.last_played = Some(now_secs());
+        inst.last_exit = None;
+        instances::save(l, &inst).await?;
+        let log = l.paths.instance_dir(&inst.id).join("launcher-output.log");
+        process::spawn_tracked(l, &source, cmd, log, vec![account.mc_token.clone()]).await
+    }
+    .await;
+    let exited = match spawned {
+        Ok(e) => e,
+        Err(e) => {
+            // The command before launch already said the game started; say it stopped.
+            if inst.launch.before_launch.is_some() {
+                l.emit(crate::Event::ProcessExited { source, code: None });
+            }
+            return Err(e);
+        }
+    };
     // Record how the game exits (so crashes show after a restart) and how long it ran.
     let (l2, id) = (l.clone(), inst.id.clone());
     tokio::spawn(async move {
