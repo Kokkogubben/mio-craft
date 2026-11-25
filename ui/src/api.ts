@@ -112,6 +112,25 @@ export async function installUpdate(): Promise<void> {
   if (inTauri) await invoke("install_update");
 }
 
+/** The instance a desktop shortcut asked to play when it started MioCraft (once). */
+export async function takeStartupPlay(): Promise<string | null> {
+  return inTauri ? invoke<string | null>("take_startup_play") : null;
+}
+
+/** Called when a desktop shortcut asks the already open MioCraft to play an instance. */
+export async function onPlayInstance(fn: (id: string) => void): Promise<void> {
+  if (!inTauri) return;
+  const { listen } = await import("@tauri-apps/api/event");
+  await listen<string>("play-instance", (e) => fn(e.payload));
+}
+
+/** Desktop shortcuts are made on Windows only, for now. */
+export const canMakeShortcuts = inTauri && navigator.userAgent.includes("Windows");
+
+export async function createShortcut(instanceId: string, name: string, icon: Uint8Array, replace: boolean): Promise<{ status: "created" | "exists"; path: string }> {
+  return invoke("create_shortcut", { instanceId, name, icon: [...icon], replace });
+}
+
 export async function appVersion(): Promise<string | null> {
   return inTauri ? invoke<string>("app_version") : null;
 }

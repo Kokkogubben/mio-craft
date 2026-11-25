@@ -1,4 +1,4 @@
-import { api, apiBytes, appVersion, checkUpdate, connect, enc, events, inTauri, installUpdate, mcpServerPath, openPath, openUrl } from "./api";
+import { api, apiBytes, appVersion, canMakeShortcuts, checkUpdate, connect, createShortcut, enc, events, inTauri, installUpdate, mcpServerPath, onPlayInstance, openPath, openUrl, takeStartupPlay } from "./api";
 import { cachedHead, initPlayer, loadImage, onPlayerClick, pausePlayer, showAccount, wearSkin } from "./player";
 import { IdleAnimation, SkinViewer } from "skinview3d";
 import { resync, slide, slideIn } from "./slide";
@@ -2829,6 +2829,117 @@ function playInstance(inst: Instance, server?: string) {
   });
 }
 
+
+// ---------- desktop shortcuts ----------
+
+/** The instance's tile drawn at one size, as PNG bytes. */
+async function tilePng(inst: Instance, size: number): Promise<Uint8Array> {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d")!;
+  // Draw it the way the app shows it: read the tile's colours from a hidden copy.
+  const probe = document.createElement("div");
+  probe.style.cssText = "position:fixed;left:-9999px;top:0";
+  probe.innerHTML = instIcon(inst, true);
+  document.body.appendChild(probe);
+  const tile = probe.firstElementChild as HTMLElement;
+  const cs = getComputedStyle(tile);
+  const [bg, ink, font] = [cs.backgroundColor, cs.color, cs.fontFamily];
+  probe.remove();
+  const r = Math.round(size * 0.16);
+  g.beginPath();
+  g.roundRect(0, 0, size, size, r);
+  g.clip();
+  const load = (src: string) =>
+    new Promise<HTMLImageElement>((ok, fail) => {
+      const im = new Image();
+      im.onload = () => ok(im);
+      im.onerror = fail;
+      im.src = src;
+    });
+  if (inst.icon_image) {
+    g.imageSmoothingEnabled = false;
+    g.drawImage(await load(inst.icon_image), 0, 0, size, size);
+  } else {
+    g.fillStyle = bg;
+    g.fillRect(0, 0, size, size);
+    if (inst.icon_glyph && GLYPHS.includes(inst.icon_glyph)) {
+      // As a picture of its own, the SVG needs its namespace and a real colour.
+      const svg = glyphSvg(inst.icon_glyph, size).replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ').replace('fill="currentColor"', `fill="${ink}"`);
+      g.imageSmoothingEnabled = false;
+      const inset = Math.round(size * 0.18);
+      g.drawImage(await load(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`), inset, inset, size - 2 * inset, size - 2 * inset);
+    } else {
+      g.fillStyle = ink;
+      g.font = `700 ${Math.round(size * 0.55)}px ${font}`;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText(inst.loader[0].toUpperCase(), size / 2, size / 2 + size * 0.03);
+    }
+  }
+  const blob = await new Promise<Blob>((ok) => c.toBlob((b) => ok(b!), "image/png"));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** An .ico file holding PNG images (Windows reads PNG inside .ico since Vista). */
+async function shortcutIcon(inst: Instance): Promise<Uint8Array> {
+  const sizes = [256, 48, 32, 16];
+  const pngs = await Promise.all(sizes.map((s) => tilePng(inst, s)));
+  const head = 6 + 16 * sizes.length;
+  const out = new Uint8Array(head + pngs.reduce((n, p) => n + p.length, 0));
+  const v = new DataView(out.buffer);
+  v.setUint16(2, 1, true);
+  v.setUint16(4, sizes.length, true);
+  let at = head;
+  sizes.forEach((s, i) => {
+    const e = 6 + 16 * i;
+    out[e] = out[e + 1] = s >= 256 ? 0 : s;
+    v.setUint16(e + 4, 1, true);
+    v.setUint16(e + 6, 32, true);
+    v.setUint32(e + 8, pngs[i].length, true);
+    v.setUint32(e + 12, at, true);
+    out.set(pngs[i], at);
+    at += pngs[i].length;
+  });
+  return out;
+}
+
+async function makeShortcut(inst: Instance) {
+  try {
+    const icon = await shortcutIcon(inst);
+    let r = await createShortcut(inst.id, inst.name, icon, false);
+    if (r.status === "exists") {
+      const ok = await ask({
+        title: "Replace the shortcut?",
+        body: `<p>There's already a shortcut called <strong>${esc(r.path.replace(/^.*[\\/]/, "").replace(/\.lnk$/i, ""))}</strong> on your desktop.</p>`,
+        ok: "Replace",
+      });
+      if (!ok) return;
+      r = await createShortcut(inst.id, inst.name, icon, true);
+    }
+    toast(`Added a shortcut to ${inst.name} on your desktop`);
+  } catch (e) {
+    toast(String((e as Error).message ?? e), "err");
+  }
+}
+
+/** A desktop shortcut asked to play an instance: show it and play it the usual way. */
+function playFromShortcut(id: string) {
+  const inst = S.instances.find((i) => i.id === id);
+  if (!inst) {
+    toast("The instance that shortcut plays no longer exists", "err");
+    return;
+  }
+  if (S.view !== "instances") setView("instances");
+  selectInstance(inst.id);
+  if (S.running.has(`game:${inst.id}`)) {
+    toast(`${inst.name} is already running`);
+    return;
+  }
+  if (S.busy.has(`launch:${inst.id}`)) return;
+  playInstance(inst);
+}
+
 // ---------- right-click menu on instances ----------
 
 document.addEventListener("contextmenu", (ev) => {
@@ -2846,6 +2957,7 @@ document.addEventListener("contextmenu", (ev) => {
     { label: "Edit…", run: () => instanceModal(inst) },
     { label: "Copy game settings…", run: () => copySettingsModal(inst) },
     { label: "Servers…", run: () => openTab(inst, "servers") },
+    ...(canMakeShortcuts ? [{ label: "Create desktop shortcut", run: () => makeShortcut(inst) }] : []),
     S.busy.has(`dup:${inst.id}`)
       ? { label: "Duplicating…", run: () => {}, disabled: true }
       : { label: "Duplicate", run: () => duplicateInstance(inst), disabled: running },
@@ -3570,6 +3682,11 @@ async function lookForUpdate(manual: boolean) {
     applyLook(!cfg.legacy_look);
     events(onEvent);
     await Promise.all([loadAccounts(), loadInstances()]);
+    // Desktop shortcuts: the one that started MioCraft, and later ones while it's open.
+    onPlayInstance(playFromShortcut).catch(() => {});
+    takeStartupPlay()
+      .then((id) => id && playFromShortcut(id))
+      .catch(() => {});
     // Get Settings ready in the background so it opens instantly.
     loadSettingsInfo().catch(() => {});
     refreshClaudeCode();
