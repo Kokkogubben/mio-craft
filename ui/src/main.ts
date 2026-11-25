@@ -30,6 +30,13 @@ interface Instance {
   launch?: LaunchOptions;
 }
 
+/** Named selections of which mods are on ("Full", "Light"); the mods folder is always the active one. */
+interface ModSetsView {
+  for?: string;
+  active: string | null;
+  sets: { name: string; enabled: number }[];
+}
+
 /** Window size, a command before launch and environment variables (Edit only; never in modpacks). */
 interface LaunchOptions {
   width?: number;
@@ -182,6 +189,8 @@ const S = {
   running: new Set<string>(),
   busy: new Set<string>(),
   modFilter: "",
+  /** The selected instance's mod sets, once loaded. */
+  modSets: null as null | ModSetsView,
   makeIdea: "",
   crash: null as null | {
     instance_id: string;
@@ -295,12 +304,14 @@ async function loadInstances() {
 async function loadInstanceData() {
   const inst = current();
   if (inst) {
-    const [mods, projects, crash] = await Promise.all([
+    const [mods, projects, crash, sets] = await Promise.all([
       api<ModEntry[]>("GET", `/instances/${enc(inst.id)}/mods`),
       api<Project[]>("GET", "/projects"),
       api("GET", `/instances/${enc(inst.id)}/crash`).catch(() => null),
+      api<ModSetsView>("GET", `/instances/${enc(inst.id)}/mod-sets`).catch(() => null),
     ]);
     S.mods = mods;
+    S.modSets = sets && { ...sets, for: inst.id };
     S.projects = projects;
     S.crash = crash;
     S.shaders =
@@ -837,9 +848,10 @@ function modsTab(inst: Instance): string {
     })
     .join("");
   return `
-    <div class="toolbar">
+    <div class="toolbar wrap mods-bar">
       <input id="mod-filter" class="input" placeholder="Search mods" value="${esc(S.modFilter)}" data-action="filter-mods"/>
-      <span class="muted">${S.mods.filter((m) => m.enabled).length} enabled · ${claudeCount} by Claude</span>
+      <span class="muted mods-count">${S.mods.filter((m) => m.enabled).length} enabled · ${claudeCount} by Claude</span>
+      ${modSetPicker(inst)}
       ${updatesButton(inst)}
       <button class="btn ghost" data-action="open-path" data-path="${esc(inst.mods_dir)}">Open mods folder</button>
     </div>
@@ -848,6 +860,66 @@ function modsTab(inst: Instance): string {
         ? `<div class="mod-list">${rows || '<p class="muted pad">No mods match.</p>'}</div>`
         : `<div class="note">No mods yet. Drop .jar files into the mods folder, or ask Claude Code to make one, for example: <code>Make a ${loaderLabel(inst.loader)} mod for my "${esc(inst.name)}" instance that makes ores glow</code></div>`
     }`;
+}
+
+// ---------- mod sets ----------
+
+function modSetPicker(inst: Instance): string {
+  const v = S.modSets;
+  if (!v || v.for !== inst.id || !S.mods.length) return "";
+  const running = S.running.has(`game:${inst.id}`);
+  const working = S.busy.has(`modset:${inst.id}`);
+  const title = running
+    ? "Close the game to change mod sets"
+    : "Mod sets choose which mods are on. Turning a mod on or off changes the set you're in.";
+  return `<label class="set-pick" title="${esc(title)}">
+      <span class="muted">Mod set</span>
+      <select class="input" data-action="mod-set" ${running || working ? "disabled" : ""}>
+        ${v.active ? "" : `<option value="" selected>${v.sets.length ? "None" : "No sets yet"}</option>`}
+        ${v.sets.map((s) => `<option value="set:${esc(s.name)}" ${s.name === v.active ? "selected" : ""}>${esc(s.name)} (${s.enabled} on)</option>`).join("")}
+        <option value="new">+ New set from the mods on now…</option>
+        ${v.active ? `<option value="rename">Rename "${esc(v.active)}"…</option><option value="remove">Delete "${esc(v.active)}"…</option>` : ""}
+      </select>
+    </label>`;
+}
+
+async function modSetCall(inst: Instance, path: string, body: object) {
+  await busy(`modset:${inst.id}`, async () => {
+    const v = await api<ModSetsView>("POST", `/instances/${enc(inst.id)}/mod-sets${path}`, body);
+    if (S.selected === inst.id) S.modSets = { ...v, for: inst.id };
+  });
+}
+
+function modSetNameModal(inst: Instance, renaming: string | null) {
+  openModal(`
+    <h2>${renaming ? "Rename mod set" : "New mod set"}</h2>
+    ${renaming ? "" : '<p class="muted small">It starts with the mods that are on now. While a set is chosen, turning mods on or off changes that set; switch sets to turn a whole group on or off at once. A mod you add joins the set you\'re in, and is off in the others.</p>'}
+    <label class="field"><span>Name</span><input id="ms-name" class="input" maxlength="40" placeholder="${renaming ? "" : S.modSets?.sets.length ? "Light" : "Full"}" value="${esc(renaming ?? "")}"/></label>
+    <div class="modal-actions">
+      <button class="btn ghost" data-action="close-modal">Cancel</button>
+      <button class="btn primary" id="ms-ok">${renaming ? "Rename" : "Create"}</button>
+    </div>`);
+  const input = $<HTMLInputElement>("#ms-name");
+  input.focus();
+  input.select();
+  const go = async () => {
+    const name = input.value.trim();
+    if (!name) return input.focus();
+    closeModal();
+    await modSetCall(inst, renaming ? "/rename" : "", renaming ? { name: renaming, new_name: name } : { name });
+  };
+  $("#ms-ok").addEventListener("click", go);
+  input.addEventListener("keydown", (e) => e.key === "Enter" && go());
+}
+
+async function removeModSet(inst: Instance, name: string) {
+  const ok = await ask({
+    title: `Delete the set "${name}"?`,
+    body: "The mods stay as they are now; only the set is forgotten.",
+    ok: "Delete set",
+    danger: true,
+  });
+  if (ok) await modSetCall(inst, "/remove", { name });
 }
 
 function sourceLabel(s: Source): string {
@@ -3642,6 +3714,19 @@ document.addEventListener("change", (ev) => {
   if (el.dataset.action === "browse-sort") {
     S.browse.sort = el.value;
     runSearch(false);
+    return;
+  }
+  if (el.dataset.action === "mod-set") {
+    const inst = current();
+    const v = S.modSets;
+    if (!inst || !v) return;
+    const pick = el.value;
+    // Show the set the folder is in until something actually changes.
+    el.value = v.active ? `set:${v.active}` : "";
+    if (pick.startsWith("set:") && pick.slice(4) !== v.active) modSetCall(inst, "/switch", { name: pick.slice(4) });
+    else if (pick === "new") modSetNameModal(inst, null);
+    else if (pick === "rename" && v.active) modSetNameModal(inst, v.active);
+    else if (pick === "remove" && v.active) removeModSet(inst, v.active);
     return;
   }
   if (el.dataset.action === "toggle-mod") {

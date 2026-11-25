@@ -3236,3 +3236,25 @@ div.cl-text {
   width: 100%;
   resize: vertical;
 }
+
+/* Mods tab: the mod set picker */
+.set-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.toolbar .set-pick .muted {
+  flex: none;
+  white-space: nowrap;
+}
+#mod-filter {
+  min-width: 160px;
+}
+.mods-bar .mods-count {
+  white-space: nowrap;
+}
+.toolbar .set-pick select.input {
+  width: auto;
+  max-width: 220px;
+}

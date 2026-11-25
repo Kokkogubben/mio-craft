@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, logfiles, modpack, instances, launch, loaders, mods, mojang, outfit, process, servers, projects, scene, shaders, storage, Launcher};
+use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, logfiles, mod_sets, modpack, instances, launch, loaders, mods, mojang, outfit, process, servers, projects, scene, shaders, storage, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -94,6 +94,10 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}", get(get_instance).patch(patch_instance).delete(delete_instance))
         .route("/instances/{id}/install", post(install_instance))
         .route("/instances/{id}/duplicate", post(duplicate_instance))
+        .route("/instances/{id}/mod-sets", get(list_mod_sets).post(create_mod_set))
+        .route("/instances/{id}/mod-sets/switch", post(switch_mod_set))
+        .route("/instances/{id}/mod-sets/rename", post(rename_mod_set))
+        .route("/instances/{id}/mod-sets/remove", post(remove_mod_set))
         .route("/instances/{id}/servers", get(list_servers).post(add_server))
         .route("/instances/{id}/servers/{index}", patch(update_server).delete(remove_server))
         .route("/game-options/sources", get(game_option_sources))
@@ -253,6 +257,33 @@ async fn account_skin(State(s): State<AppState>, Path(id): Path<String>) -> std:
 async fn worn_cape(State(s): State<AppState>, Path(id): Path<String>) -> std::result::Result<Response, ApiError> {
     let png = outfit::worn_cape(&s.l, &id).await?;
     Ok(([("content-type", "image/png"), ("cache-control", "no-store")], png).into_response())
+}
+
+#[derive(Deserialize)]
+struct SetBody {
+    name: String,
+    #[serde(default)]
+    new_name: String,
+}
+
+async fn list_mod_sets(State(s): State<AppState>, Path(id): Path<String>) -> R<mod_sets::SetsView> {
+    Ok(Json(mod_sets::list(&s.l, &id).await?))
+}
+
+async fn create_mod_set(State(s): State<AppState>, Path(id): Path<String>, Json(b): Json<SetBody>) -> R<mod_sets::SetsView> {
+    Ok(Json(mod_sets::create(&s.l, &id, &b.name).await?))
+}
+
+async fn switch_mod_set(State(s): State<AppState>, Path(id): Path<String>, Json(b): Json<SetBody>) -> R<mod_sets::SetsView> {
+    Ok(Json(mod_sets::switch(&s.l, &id, &b.name).await?))
+}
+
+async fn rename_mod_set(State(s): State<AppState>, Path(id): Path<String>, Json(b): Json<SetBody>) -> R<mod_sets::SetsView> {
+    Ok(Json(mod_sets::rename(&s.l, &id, &b.name, &b.new_name).await?))
+}
+
+async fn remove_mod_set(State(s): State<AppState>, Path(id): Path<String>, Json(b): Json<SetBody>) -> R<mod_sets::SetsView> {
+    Ok(Json(mod_sets::remove(&s.l, &id, &b.name).await?))
 }
 
 async fn list_servers(State(s): State<AppState>, Path(id): Path<String>) -> R<Vec<servers::Server>> {
