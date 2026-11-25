@@ -3285,3 +3285,63 @@ div.cl-text {
   margin: 6px 0 0;
   padding-left: 18px;
 }
+
+/* Sidebar: search and groups */
+.side-search {
+  padding: 2px 12px 6px;
+}
+.side-search[hidden] {
+  display: none;
+}
+.side-search .input {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+.side-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.side-group:hover {
+  color: var(--text);
+}
+.side-group .chev {
+  flex: none;
+  transition: transform 0.15s;
+}
+.side-group.open .chev {
+  transform: rotate(90deg);
+}
+.side-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.side-group-count {
+  font-weight: 400;
+  opacity: 0.8;
+}
+#instance-list > .inst.in-group {
+  padding-left: 22px;
+}
+.grp-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 12px;
+}

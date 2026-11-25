@@ -28,6 +28,8 @@ interface Instance {
   icon_glyph?: string | null;
   icon_image?: string | null;
   launch?: LaunchOptions;
+  /** The group (folder) it's listed under in the sidebar. */
+  group?: string | null;
 }
 
 /** Named selections of which mods are on ("Full", "Light"); the mods folder is always the active one. */
@@ -189,6 +191,8 @@ const S = {
   running: new Set<string>(),
   busy: new Set<string>(),
   modFilter: "",
+  /** Sidebar search. */
+  instQ: "",
   /** The selected instance's mod sets, once loaded. */
   modSets: null as null | ModSetsView,
   /** Problems the mod check found in the selected instance (missing, wrong loader, twice). */
@@ -349,23 +353,109 @@ async function loadAccounts() {
 
 // ---------- sidebar ----------
 
-function renderSidebar() {
-  const list = $("#instance-list");
-  const html = S.instances.length
-    ? S.instances
-        .map(
-          (i) => `
-      <button class="inst ${i.id === S.selected ? "active" : ""}" data-action="select" data-id="${esc(i.id)}">
+// ---------- sidebar groups and search ----------
+
+/** Groups folded shut in the sidebar (this browser only). */
+const foldedGroups: Set<string> = (() => {
+  try {
+    return new Set<string>(JSON.parse(localStorage.getItem("mc.foldedGroups") ?? "[]"));
+  } catch {
+    return new Set<string>();
+  }
+})();
+
+function toggleGroup(g: string) {
+  if (!foldedGroups.delete(g)) foldedGroups.add(g);
+  try {
+    localStorage.setItem("mc.foldedGroups", JSON.stringify([...foldedGroups]));
+  } catch {
+    /* only a convenience */
+  }
+  renderSidebar();
+}
+
+const groupNames = () => [...new Set(S.instances.map((i) => i.group).filter((g): g is string => !!g))].sort((a, b) => a.localeCompare(b));
+
+function instMatches(i: Instance, q: string): boolean {
+  return `${i.name} ${i.mc_version} ${loaderLabel(i.loader)} ${i.group ?? ""}`.toLowerCase().includes(q);
+}
+
+function instRow(i: Instance, inGroup: boolean): string {
+  return `
+      <button class="inst ${inGroup ? "in-group" : ""} ${i.id === S.selected ? "active" : ""}" data-action="select" data-id="${esc(i.id)}">
         ${instIcon(i)}
         <span class="inst-text">
           <span class="inst-name">${esc(i.name)}</span>
           <span class="inst-meta">${esc(i.mc_version)} · ${loaderLabel(i.loader)}</span>
         </span>
         ${S.running.has(`game:${i.id}`) ? '<span class="dot" title="Running"></span>' : ""}
-      </button>`,
-        )
-        .join("")
-    : `<p class="side-empty">No instances yet.</p>`;
+      </button>`;
+}
+
+function sidebarList(): string {
+  if (!S.instances.length) return `<p class="side-empty">No instances yet.</p>`;
+  const q = S.instQ.trim().toLowerCase();
+  const shown = q ? S.instances.filter((i) => instMatches(i, q)) : S.instances;
+  if (!shown.length) return `<p class="side-empty">No instances match.</p>`;
+  let html = shown.filter((i) => !i.group).map((i) => instRow(i, false)).join("");
+  for (const g of groupNames()) {
+    const members = shown.filter((i) => i.group === g);
+    if (!members.length) continue;
+    // While searching, every group with a match is open.
+    const open = !!q || !foldedGroups.has(g);
+    const running = members.some((i) => S.running.has(`game:${i.id}`));
+    html += `<button class="side-group ${open ? "open" : ""}" data-action="toggle-group" data-group="${esc(g)}" aria-expanded="${open}">
+        <svg class="chev" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 2l4 3-4 3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span class="side-group-name">${esc(g)}</span>
+        ${!open && running ? '<span class="dot" title="Running"></span>' : ""}
+        <span class="side-group-count">${members.length}</span>
+      </button>`;
+    if (open) html += members.map((i) => instRow(i, true)).join("");
+  }
+  return html;
+}
+
+function groupModal(inst: Instance) {
+  const groups = groupNames();
+  openModal(`
+    <h2>Move to group</h2>
+    <p class="muted small">Groups are folders in the instance list. Type a new name or pick one you already have.</p>
+    <label class="field"><span>Group</span><input id="grp-name" class="input" maxlength="40" list="grp-list" value="${esc(inst.group ?? "")}" placeholder="e.g. Modpacks"/></label>
+    <datalist id="grp-list">${groups.map((g) => `<option value="${esc(g)}"></option>`).join("")}</datalist>
+    ${groups.length ? `<div class="grp-picks">${groups.map((g) => `<button type="button" class="btn small ghost" data-grp="${esc(g)}">${esc(g)}</button>`).join("")}</div>` : ""}
+    <div class="modal-actions spread">
+      <span>${inst.group ? '<button class="btn ghost" id="grp-clear">Take out of group</button>' : ""}</span>
+      <span><button class="btn ghost" data-action="close-modal">Cancel</button> <button class="btn primary" id="grp-ok">Move</button></span>
+    </div>`);
+  const input = $<HTMLInputElement>("#grp-name");
+  input.focus();
+  input.select();
+  const save = async (group: string) => {
+    closeModal();
+    try {
+      await api("PATCH", `/instances/${enc(inst.id)}`, { group });
+      if (group) {
+        foldedGroups.delete(group);
+        try {
+          localStorage.setItem("mc.foldedGroups", JSON.stringify([...foldedGroups]));
+        } catch {
+          /* only a convenience */
+        }
+      }
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  };
+  $("#grp-ok").addEventListener("click", () => save(input.value.trim()));
+  input.addEventListener("keydown", (e) => e.key === "Enter" && save(input.value.trim()));
+  document.querySelectorAll<HTMLElement>("[data-grp]").forEach((b) => b.addEventListener("click", () => save(b.dataset.grp!)));
+  document.querySelector("#grp-clear")?.addEventListener("click", () => save(""));
+}
+
+function renderSidebar() {
+  const list = $("#instance-list");
+  $("#side-search").hidden = S.instances.length < 2 && !S.instQ;
+  const html = sidebarList();
   if (html !== list.dataset.html) {
     list.innerHTML = html;
     list.dataset.html = html;
@@ -3151,6 +3241,7 @@ document.addEventListener("contextmenu", (ev) => {
     { label: "Edit…", run: () => instanceModal(inst) },
     { label: "Copy game settings…", run: () => copySettingsModal(inst) },
     { label: "Servers…", run: () => openTab(inst, "servers") },
+    { label: inst.group ? "Move to another group…" : "Move to group…", run: () => groupModal(inst) },
     ...(canMakeShortcuts ? [{ label: "Create desktop shortcut", run: () => makeShortcut(inst) }] : []),
     S.busy.has(`dup:${inst.id}`)
       ? { label: "Duplicating…", run: () => {}, disabled: true }
@@ -3518,6 +3609,9 @@ document.addEventListener("click", async (ev) => {
     case "new-instance":
       newInstanceModal();
       break;
+    case "toggle-group":
+      toggleGroup(el.dataset.group!);
+      break;
     case "settings":
       openSettings();
       break;
@@ -3806,6 +3900,11 @@ document.addEventListener("change", (ev) => {
 
 document.addEventListener("input", (ev) => {
   const el = ev.target as HTMLInputElement;
+  if (el.dataset.action === "filter-instances") {
+    S.instQ = el.value;
+    renderSidebar();
+    return;
+  }
   if (el.dataset.action === "filter-mods") {
     S.modFilter = el.value;
     refocus = "mod-filter";

@@ -42,6 +42,7 @@ MioCraft does three things:
 - Every instance keeps its **own game folder** (mods, saves, resource packs, logs) and its own memory and Java arguments (under **Edit**); game files, libraries and Java are shared between instances so they're only downloaded once
 - **Instance icons**: a colour, a pixel symbol or your own picture, under **Edit**
 - **Right-click an instance** to play, open its folder, edit, **duplicate** (a full copy with worlds and mods), export or delete it
+- **Search and group instances**: type in the box above the instance list to filter by name, version, loader or group. Right-click → **Move to group…** puts instances in folders you can fold away
 - **Desktop shortcuts** (Windows): right-click an instance → **Create desktop shortcut**. The shortcut has the instance's icon and plays it; if MioCraft is already open, it uses that window instead of opening a second one
 - **Launch options per instance**: in **Edit**, pick the game window size or fullscreen, and under **Advanced launch options** a command to run before the game starts (it must succeed; its output goes to the Console) and environment variables. Modpack exports leave these out and imports never set them
 - **Mod sets**: in the Mods tab, save the mods that are on as a set ("Full", "Light") and switch between sets with one pick. Sets remember mods by project or mod id, so updates don't break them; a mod you add joins the set you're in. Switching waits until the game is closed

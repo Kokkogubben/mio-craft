@@ -46,6 +46,9 @@ pub struct Instance {
     /// these: a modpack import never does, and an export never includes them.
     #[serde(default, skip_serializing_if = "LaunchOptions::is_empty")]
     pub launch: LaunchOptions,
+    /// The group (folder) the instance is listed under, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -233,6 +236,7 @@ pub async fn create(l: &Launcher, req: NewInstance) -> Result<Instance> {
         icon_glyph: None,
         icon_image: None,
         launch: Default::default(),
+        group: None,
     };
     tokio::fs::create_dir_all(l.paths.mods_dir(&inst.id)).await?;
     save(l, &inst).await?;
@@ -337,6 +341,8 @@ fn copy_dir(from: &std::path::Path, to: &std::path::Path, top: bool) -> Result<(
 pub struct InstancePatch {
     pub name: Option<String>,
     pub launch: Option<LaunchOptions>,
+    /// An empty string takes the instance out of its group.
+    pub group: Option<String>,
     pub ram_mb: Option<u32>,
     pub jvm_args: Option<Vec<String>>,
     pub live: Option<crate::live::LiveSettings>,
@@ -386,6 +392,13 @@ pub async fn update(l: &Launcher, id: &str, p: InstancePatch) -> Result<Instance
     }
     if let Some(o) = p.launch {
         inst.launch = o.normalized()?;
+    }
+    if let Some(g) = p.group {
+        let g = g.trim();
+        if g.chars().count() > 40 || g.chars().any(char::is_control) {
+            anyhow::bail!("Give the group a name of up to 40 characters");
+        }
+        inst.group = (!g.is_empty()).then(|| g.to_string());
     }
     if let Some(live) = p.live {
         let live = live.normalized();

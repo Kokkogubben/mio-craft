@@ -295,6 +295,7 @@ mod tests {
             icon_glyph: None,
             icon_image: None,
             launch: Default::default(),
+            group: None,
         }
     }
 
