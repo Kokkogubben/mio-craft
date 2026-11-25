@@ -111,7 +111,7 @@ impl Options {
     pub fn get(&self, key: &str) -> Option<&str> {
         self.0.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
     }
-    fn set(&mut self, key: &str, value: String) {
+    pub(crate) fn set(&mut self, key: &str, value: String) {
         match self.0.iter_mut().find(|(k, _)| k == key) {
             Some(e) => e.1 = value,
             None => self.0.push((key.to_string(), value)),
@@ -290,7 +290,7 @@ pub fn official_dir() -> Option<PathBuf> {
 
 const MAX_OPTIONS: usize = 512 * 1024;
 
-async fn read_options(path: &Path) -> Result<Option<Options>> {
+pub(crate) async fn read_options(path: &Path) -> Result<Option<Options>> {
     match tokio::fs::read(path).await {
         Ok(b) if b.len() > MAX_OPTIONS => bail!("{} is too big to be an options.txt", path.display()),
         Ok(b) => Ok(Some(Options::parse(&String::from_utf8_lossy(&b)))),

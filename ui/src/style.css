@@ -3345,3 +3345,16 @@ div.cl-text {
   gap: 6px;
   margin: -4px 0 12px;
 }
+
+/* Resource packs tab */
+.pack-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  image-rendering: pixelated;
+  object-fit: cover;
+}
+.pack-icon.blank {
+  background: var(--surface-2);
+}

@@ -140,10 +140,10 @@ interface Account {
   selected: boolean;
 }
 
-type Tab = "mods" | "browse" | "servers" | "projects" | "console";
+type Tab = "mods" | "browse" | "packs" | "servers" | "projects" | "console";
 type Server = { index: number; name: string; address: string; icon?: string };
 
-type BrowseKind = "mod" | "shader";
+type BrowseKind = "mod" | "shader" | "resourcepack";
 
 interface ShaderPack {
   file_name: string;
@@ -158,6 +158,13 @@ interface ShaderList {
 }
 
 const NO_SHADERS: ShaderList = { packs: [], has_loader: false, folder: "" };
+
+/** The instance's resource packs, and which ones the game has turned on. */
+interface ResourcePackList {
+  for?: string;
+  packs: { file_name: string; description: string | null; icon: string | null; size: number; enabled: boolean; online: { source: Source; title: string; page_url: string } | null }[];
+  folder: string;
+}
 /** Iris on Modrinth: the mod that loads shader packs. */
 const IRIS_ID = "YL57xq9U";
 
@@ -175,6 +182,7 @@ const S = {
   mods: [] as ModEntry[],
   projects: [] as Project[],
   shaders: NO_SHADERS,
+  resourcePacks: null as null | ResourcePackList,
   accounts: [] as Account[],
   hasClientId: false,
   hasBuiltinClientId: false,
@@ -331,6 +339,12 @@ async function loadInstanceData() {
     ]);
     S.mods = mods;
     S.modSets = sets && { ...sets, for: inst.id };
+    api<ResourcePackList>("GET", `/instances/${enc(inst.id)}/resourcepacks`)
+      .then((r) => {
+        S.resourcePacks = { ...r, for: inst.id };
+        if (S.selected === inst.id && (S.tab === "packs" || S.tab === "browse")) renderMain();
+      })
+      .catch(() => {});
     // Opens every jar, so it comes in after the list instead of holding it up.
     if (inst.loader !== "vanilla")
       api<{ problems: { file: string; message: string }[] }>("GET", `/instances/${enc(inst.id)}/mod-check`)
@@ -725,11 +739,13 @@ function renderMain() {
     </header>
     ${crashBanner(inst)}
     <div class="tabs" role="tablist">
-      ${(["mods", "browse", "servers", "projects", "console"] as Tab[])
+      ${(["mods", "browse", "packs", "servers", "projects", "console"] as Tab[])
         .map((t) => {
+          const rp = S.resourcePacks?.for === inst.id ? S.resourcePacks : null;
           const label =
             t === "mods" ? `Mods <span class="count">${S.mods.length}</span>`
             : t === "browse" ? "Browse"
+            : t === "packs" ? `Resource packs${rp ? ` <span class="count">${rp.packs.length}</span>` : ""}`
             : t === "servers" ? `Servers${S.servers.has(inst.id) ? ` <span class="count">${S.servers.get(inst.id)!.length}</span>` : ""}`
             : t === "projects" ? `Claude projects <span class="count">${projectsFor(inst).length}</span>`
             : "Console";
@@ -737,7 +753,7 @@ function renderMain() {
         })
         .join("")}
     </div>
-    <section class="tab-body">${S.tab === "mods" ? modsTab(inst) : S.tab === "browse" ? browseTab(inst) : S.tab === "servers" ? serversTab(inst) : S.tab === "projects" ? projectsTab(inst) : consoleTab(inst)}</section>`;
+    <section class="tab-body">${S.tab === "mods" ? modsTab(inst) : S.tab === "browse" ? browseTab(inst) : S.tab === "packs" ? packsTab(inst) : S.tab === "servers" ? serversTab(inst) : S.tab === "projects" ? projectsTab(inst) : consoleTab(inst)}</section>`;
   slide("tab", main.querySelector(".tabs"), main.querySelector(".tab.active"));
   if (mainSlide) {
     slideIn(main, 0, mainSlide * 28);
@@ -1059,13 +1075,14 @@ function fmtCount(n: number): string {
 }
 
 function browseTab(inst: Instance): string {
-  if (inst.loader === "vanilla") {
-    return `<div class="note">Vanilla instances can't load mods. Create an instance with a mod loader to browse mods.</div>`;
-  }
   const B = S.browse;
+  const vanilla = inst.loader === "vanilla";
+  // Vanilla runs resource packs but no mods or shaders.
+  if (vanilla && B.kind !== "resourcepack") B.kind = "resourcepack";
   const needsKey = B.source === "curseforge" && !S.hasCfKey;
   const shader = B.kind === "shader";
-  const noun = shader ? "shader packs" : "mods";
+  const rpack = B.kind === "resourcepack";
+  const noun = shader ? "shader packs" : rpack ? "resource packs" : "mods";
   const results = B.hits
     .map((h) => {
       const key = `get:${h.source}:${h.project_id}`;
@@ -1098,14 +1115,15 @@ function browseTab(inst: Instance): string {
   return `
     <div class="toolbar wrap">
       <div class="seg small-seg">
-        <button data-action="browse-kind" data-v="mod" class="${shader ? "" : "on"}">Mods</button>
-        <button data-action="browse-kind" data-v="shader" class="${shader ? "on" : ""}">Shaders</button>
+        ${vanilla ? "" : `<button data-action="browse-kind" data-v="mod" class="${B.kind === "mod" ? "on" : ""}">Mods</button>
+        <button data-action="browse-kind" data-v="shader" class="${shader ? "on" : ""}">Shaders</button>`}
+        <button data-action="browse-kind" data-v="resourcepack" class="${rpack ? "on" : ""}">Resource packs</button>
       </div>
       <div class="seg small-seg">
         <button data-action="browse-source" data-v="modrinth" class="${B.source === "modrinth" ? "on" : ""}">Modrinth</button>
         <button data-action="browse-source" data-v="curseforge" class="${B.source === "curseforge" ? "on" : ""}">CurseForge</button>
       </div>
-      <input id="browse-q" class="input" placeholder="Search ${sourceLabel(B.source)} ${noun} for ${esc(inst.mc_version)}${shader ? "" : " " + loaderLabel(inst.loader)}" value="${esc(B.q)}" data-action="browse-q" ${needsKey ? "disabled" : ""}/>
+      <input id="browse-q" class="input" placeholder="Search ${sourceLabel(B.source)} ${noun} for ${esc(inst.mc_version)}${B.kind === "mod" ? " " + loaderLabel(inst.loader) : ""}" value="${esc(B.q)}" data-action="browse-q" ${needsKey ? "disabled" : ""}/>
       <select id="browse-sort" class="input sort" data-action="browse-sort" ${needsKey ? "disabled" : ""}>
         ${[["relevance", "Relevance"], ["downloads", "Downloads"], ["updated", "Recently updated"], ["newest", "Newest"]]
           .map(([v, l]) => `<option value="${v}" ${B.sort === v ? "selected" : ""}>${l}</option>`)
@@ -1119,10 +1137,55 @@ function browseTab(inst: Instance): string {
         : B.error
           ? `<div class="note err">${esc(B.error)}</div>`
           : B.hits.length
-            ? `<p class="muted small">${shader ? `Showing shader packs for Minecraft ${esc(inst.mc_version)}.` : `Showing mods for Minecraft ${esc(inst.mc_version)} with ${loaderLabel(inst.loader)}. Required dependencies install automatically.`}</p>
+            ? `<p class="muted small">${rpack ? `Showing resource packs for Minecraft ${esc(inst.mc_version)}. Installed packs show in the Resource packs tab, where you turn them on.` : shader ? `Showing shader packs for Minecraft ${esc(inst.mc_version)}.` : `Showing mods for Minecraft ${esc(inst.mc_version)} with ${loaderLabel(inst.loader)}. Required dependencies install automatically.`}</p>
                <div class="mod-list">${results}</div>
                ${B.hits.length < B.total ? `<button class="btn ghost more" data-action="browse-more" ${B.loading ? "disabled" : ""}>${B.loading ? "Loading…" : "Load more"}</button>` : ""}`
             : `<p class="muted pad">${B.loading ? "Searching…" : `No ${noun} found.`}</p>`
+    }`;
+}
+
+function packsTab(inst: Instance): string {
+  const rp = S.resourcePacks?.for === inst.id ? S.resourcePacks : null;
+  if (!rp) return `<div class="mod-list">${'<div class="mod"><span class="pack-icon skel-box"></span><div class="mod-text"><span class="skel-line" style="width:40%"></span><span class="skel-line" style="width:65%"></span></div></div>'.repeat(3)}</div>`;
+  const running = S.running.has(`game:${inst.id}`);
+  const on = rp.packs.filter((p) => p.enabled).length;
+  const rows = rp.packs
+    .map((p) => {
+      const key = `rpack:${p.file_name}`;
+      return `
+      <div class="mod ${p.enabled ? "" : "disabled"}">
+        <label class="switch" title="${running ? "Close the game to change which packs are on" : p.enabled ? "Turn off" : "Turn on"}">
+          <input type="checkbox" ${p.enabled ? "checked" : ""} data-action="toggle-rpack" data-file="${esc(p.file_name)}" ${running || S.busy.has(key) ? "disabled" : ""}/>
+          <span></span>
+        </label>
+        ${p.icon ? `<img class="pack-icon" src="${esc(p.icon)}" alt=""/>` : '<div class="pack-icon blank"></div>'}
+        <div class="mod-text">
+          <div class="mod-title">
+            <span class="mod-name">${esc(p.online?.title ?? p.file_name.replace(/\.zip$/i, ""))}</span>
+            ${p.online ? `<button class="badge src ${p.online.source}" data-action="open-url" data-url="${esc(p.online.page_url)}" title="Open on ${sourceLabel(p.online.source)}">${sourceLabel(p.online.source)}</button>` : ""}
+          </div>
+          ${p.description ? `<div class="mod-desc">${esc(p.description)}</div>` : ""}
+          <div class="mod-file">${esc(p.file_name)}${p.size ? ` · ${fmtSize(p.size)}` : ""}</div>
+        </div>
+        <div class="mod-actions">
+          <button class="icon-btn" data-action="delete-rpack" data-file="${esc(p.file_name)}" title="Delete" aria-label="Delete resource pack" ${S.busy.has(key) ? "disabled" : ""}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+          </button>
+        </div>
+      </div>`;
+    })
+    .join("");
+  return `
+    <div class="toolbar">
+      <span class="muted">${on} on · ${rp.packs.length} installed</span>
+      <button class="btn primary" data-action="find-rpacks">Find resource packs</button>
+      <button class="btn ghost" data-action="open-path" data-path="${esc(rp.folder)}">Open resourcepacks folder</button>
+    </div>
+    ${running ? '<div class="note">The game is running. Close it to turn packs on or off here, or change them in game under Options → Resource Packs.</div>' : ""}
+    ${
+      rp.packs.length
+        ? `<div class="mod-list">${rows}</div><p class="muted small">Packs you turn on here are on the next time the game starts. Packs lower in the game's list are drawn on top; a pack you turn on here goes on top.</p>`
+        : `<div class="note">No resource packs yet. Find some with <button class="link" data-action="find-rpacks">Find resource packs</button>, or drop .zip files onto the launcher.</div>`
     }`;
 }
 
@@ -1170,8 +1233,9 @@ function shaderPanel(): string {
 let searchSeq = 0;
 async function runSearch(more: boolean) {
   const inst = current();
-  if (!inst || inst.loader === "vanilla") return;
   const B = S.browse;
+  if (inst?.loader === "vanilla") B.kind = "resourcepack";
+  if (!inst) return;
   if (B.source === "curseforge" && !S.hasCfKey) {
     B.instance = inst.id;
     B.hits = [];
@@ -1208,17 +1272,18 @@ async function installOnline(pid: string, versionId?: string) {
   if (!inst) return;
   const source = S.browse.source;
   const shader = S.browse.kind === "shader";
+  const rpack = S.browse.kind === "resourcepack";
   await busy(`get:${source}:${pid}`, async () => {
     const r = await api<{ installed: string[]; already_installed: string[]; warnings: string[] }>(
       "POST",
-      `/instances/${enc(inst.id)}/${shader ? "shaders" : "online-mods"}`,
+      `/instances/${enc(inst.id)}/${shader ? "shaders" : rpack ? "resourcepacks" : "online-mods"}`,
       { source, project_id: pid, version_id: versionId },
     );
     const hit = S.browse.hits.find((h) => h.project_id === pid);
     if (hit) hit.installed = true;
     const deps = r.installed.length - 1;
     if (r.installed.length) toast(`Installed ${hit?.title ?? r.installed[0]}${deps > 0 ? ` and ${deps} dependenc${deps === 1 ? "y" : "ies"}` : ""}`);
-    else toast(`${hit?.title ?? (shader ? "That shader pack" : "That mod")} is already installed`);
+    else toast(`${hit?.title ?? (shader ? "That shader pack" : rpack ? "That resource pack" : "That mod")} is already installed`);
     r.warnings.forEach((w) => toast(w, "err"));
   });
 }
@@ -1232,7 +1297,7 @@ async function versionsModal(pid: string, title: string) {
     const vs = await api<ModVersion[]>("GET", `/browse/${source}/projects/${enc(pid)}/versions?instance_id=${enc(inst.id)}&kind=${S.browse.kind}`);
     openModal(`
       <h2>${esc(title)}</h2>
-      <p class="muted small">Versions for Minecraft ${esc(inst.mc_version)}${S.browse.kind === "shader" ? "" : ` with ${loaderLabel(inst.loader)}`}</p>
+      <p class="muted small">Versions for Minecraft ${esc(inst.mc_version)}${S.browse.kind === "mod" ? ` with ${loaderLabel(inst.loader)}` : ""}</p>
       <div class="versions">
         ${
           vs.length
@@ -3828,6 +3893,23 @@ document.addEventListener("click", async (ev) => {
       S.browse.hits = [];
       runSearch(false);
       break;
+    case "find-rpacks":
+      S.browse.kind = "resourcepack";
+      S.browse.hits = [];
+      S.browse.instance = null;
+      S.tab = "browse";
+      renderMain();
+      break;
+    case "delete-rpack": {
+      if (!inst) break;
+      const file = el.dataset.file!;
+      if (!(await ask({ title: "Delete this resource pack?", body: `<code>${esc(file)}</code> is removed from the instance's resourcepacks folder.`, ok: "Delete", danger: true }))) break;
+      busy(`rpack:${file}`, async () => {
+        await api("DELETE", `/instances/${enc(inst.id)}/resourcepacks/${enc(file)}`);
+        S.browse.instance = null; // refresh the "Installed" badges
+      });
+      break;
+    }
     case "delete-shader": {
       if (!inst) break;
       const file = el.dataset.file!;
@@ -3890,6 +3972,13 @@ document.addEventListener("change", (ev) => {
   if (el.dataset.action === "browse-sort") {
     S.browse.sort = el.value;
     runSearch(false);
+    return;
+  }
+  if (el.dataset.action === "toggle-rpack") {
+    const inst = current();
+    if (!inst) return;
+    const file = el.dataset.file!;
+    busy(`rpack:${file}`, () => api("POST", `/instances/${enc(inst.id)}/resourcepacks/${enc(file)}/enabled`, { enabled: el.checked }));
     return;
   }
   if (el.dataset.action === "mod-set") {

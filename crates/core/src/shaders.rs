@@ -22,21 +22,34 @@ pub fn dir(l: &Launcher, instance_id: &str) -> PathBuf {
     l.paths.game_dir(instance_id).join("shaderpacks")
 }
 
-/// `instances/<id>/online-shaders.json`: pack file name → where it came from.
-type Tags = HashMap<String, OnlineMod>;
+/// `instances/<id>/online-shaders.json` (or `online-resourcepacks.json`): pack file name → where it came from.
+pub(crate) type Tags = HashMap<String, OnlineMod>;
 
-fn tags_file(l: &Launcher, instance_id: &str) -> PathBuf {
-    l.paths.instance_dir(instance_id).join("online-shaders.json")
+/// The folder a kind of pack goes in.
+pub(crate) fn pack_dir(l: &Launcher, instance_id: &str, kind: Kind) -> PathBuf {
+    match kind {
+        Kind::ResourcePack => crate::resource_packs::dir(l, instance_id),
+        _ => dir(l, instance_id),
+    }
+}
+
+fn tags_file(l: &Launcher, instance_id: &str, kind: Kind) -> PathBuf {
+    let name = if kind == Kind::ResourcePack { "online-resourcepacks.json" } else { "online-shaders.json" };
+    l.paths.instance_dir(instance_id).join(name)
 }
 
 /// Tags for packs that still exist (packs can be deleted by hand).
 pub async fn load_tags(l: &Launcher, instance_id: &str) -> Tags {
-    let mut tags: Tags = http::read_json(&tags_file(l, instance_id)).await.unwrap_or_default();
-    let d = dir(l, instance_id);
+    load_pack_tags(l, instance_id, Kind::Shader).await
+}
+
+pub(crate) async fn load_pack_tags(l: &Launcher, instance_id: &str, kind: Kind) -> Tags {
+    let mut tags: Tags = http::read_json(&tags_file(l, instance_id, kind)).await.unwrap_or_default();
+    let d = pack_dir(l, instance_id, kind);
     let before = tags.len();
     tags.retain(|f, _| d.join(f).exists());
     if tags.len() != before {
-        let _ = http::write_json(&tags_file(l, instance_id), &tags).await;
+        let _ = http::write_json(&tags_file(l, instance_id, kind), &tags).await;
     }
     tags
 }
@@ -84,33 +97,50 @@ pub async fn list(l: &Launcher, instance_id: &str) -> Result<ShaderList> {
 
 /// Download a shader pack into the instance's `shaderpacks/` folder.
 pub async fn install(l: &Launcher, instance_id: &str, req: InstallRequest) -> Result<InstallReport> {
+    let mut report = install_pack(l, instance_id, req, Kind::Shader).await?;
+    if !list(l, instance_id).await?.has_loader {
+        report.warnings.push("This instance has no shader loader yet. Install Iris from the mod browser to use shader packs.".to_string());
+    }
+    Ok(report)
+}
+
+/// Download a shader or resource pack from the browser into its folder.
+pub(crate) async fn install_pack(l: &Launcher, instance_id: &str, req: InstallRequest, kind: Kind) -> Result<InstallReport> {
     let source = Source::parse(&req.source)?;
     let inst = instances::get(l, instance_id).await?;
-    let (title, _slug, page_url) = browse::project_info(l, source, Kind::Shader, &req.project_id).await?;
+    let (title, _slug, page_url) = browse::project_info(l, source, kind, &req.project_id).await?;
+    let mut warnings = vec![];
     let version = match &req.version_id {
-        Some(v) => browse::version_by_id(l, source, Kind::Shader, &req.project_id, v, &inst).await?,
+        Some(v) => browse::version_by_id(l, source, kind, &req.project_id, v, &inst).await?,
         None => {
-            let all = browse::versions(l, source, Kind::Shader, &req.project_id, &inst).await?;
-            browse::pick_version(&all)
-                .cloned()
-                .ok_or_else(|| anyhow!("{title} has no version for Minecraft {}", inst.mc_version))?
+            let all = browse::versions(l, source, kind, &req.project_id, &inst).await?;
+            match browse::pick_version(&all).cloned() {
+                Some(v) => v,
+                // Resource packs for another version usually still work; the game just warns.
+                None if kind == Kind::ResourcePack => {
+                    let any = browse::versions_for(l, source, kind, &req.project_id, &inst, false).await?;
+                    let v = browse::pick_version(&any).cloned().ok_or_else(|| anyhow!("{title} has no files to download"))?;
+                    warnings.push(format!("{title} wasn't made for Minecraft {}, so the game may call it incompatible. It often works anyway.", inst.mc_version));
+                    v
+                }
+                None => bail!("{title} has no version for Minecraft {}", inst.mc_version),
+            }
         }
     };
+    let folder = if kind == Kind::ResourcePack { "resourcepacks" } else { "shaderpacks" };
     let Some(url) = version.file.url.clone() else {
-        bail!(
-            "The author of {title} doesn't allow downloads from other apps. Download it from {page_url} and drop it in the shaderpacks folder."
-        );
+        bail!("The author of {title} doesn't allow downloads from other apps. Download it from {page_url} and drop it in the {folder} folder.");
     };
     let name = &version.file.filename;
     if !name.to_lowercase().ends_with(".zip") {
         bail!("{title} has an unexpected file name ({name})");
     }
-    let d = dir(l, &inst.id);
+    let d = pack_dir(l, &inst.id, kind);
     tokio::fs::create_dir_all(&d).await?;
     let path = paths::safe_join(&d, name)?;
 
     // Replace other versions of the same pack.
-    let mut tags = load_tags(l, &inst.id).await;
+    let mut tags = load_pack_tags(l, &inst.id, kind).await;
     let old: Vec<String> = tags
         .iter()
         .filter(|(f, t)| t.source == source && t.project_id == req.project_id && *f != name)
@@ -121,7 +151,7 @@ pub async fn install(l: &Launcher, instance_id: &str, req: InstallRequest) -> Re
         tags.remove(&f);
     }
 
-    l.progress("shaders", 0, 1, format!("Downloading {title}"));
+    l.progress(folder, 0, 1, format!("Downloading {title}"));
     http::download(
         &l.http,
         &Download {
@@ -145,14 +175,9 @@ pub async fn install(l: &Launcher, instance_id: &str, req: InstallRequest) -> Re
             download_url: Some(url),
         },
     );
-    http::write_json(&tags_file(l, &inst.id), &tags).await?;
-    l.progress("shaders", 1, 1, format!("{title} installed"));
+    http::write_json(&tags_file(l, &inst.id, kind), &tags).await?;
+    l.progress(folder, 1, 1, format!("{title} installed"));
     l.emit(Event::ModsChanged { instance_id: inst.id.clone() });
-
-    let mut warnings = vec![];
-    if !list(l, &inst.id).await?.has_loader {
-        warnings.push("This instance has no shader loader yet. Install Iris from the mod browser to use shader packs.".to_string());
-    }
     Ok(InstallReport { installed: vec![name.clone()], already_installed: vec![], warnings })
 }
 

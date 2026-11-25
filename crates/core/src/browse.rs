@@ -23,6 +23,7 @@ pub const CURSEFORGE_API: &str = "https://api.curseforge.com/v1";
 const CF_MINECRAFT: u32 = 432;
 const CF_CLASS_MODS: u32 = 6;
 const CF_CLASS_SHADERS: u32 = 6552;
+const CF_CLASS_RESOURCE_PACKS: u32 = 12;
 
 /// What is being browsed. Shader packs are searched the same way as mods but
 /// are zip files that go in `shaderpacks/` (see `shaders.rs`).
@@ -32,6 +33,9 @@ pub enum Kind {
     #[default]
     Mod,
     Shader,
+    /// Resource packs: zip files in `resourcepacks/` (see `resource_packs.rs`). Vanilla runs them too.
+    #[serde(rename = "resourcepack")]
+    ResourcePack,
 }
 
 impl Kind {
@@ -40,6 +44,7 @@ impl Kind {
         match self {
             Self::Mod => "mod",
             Self::Shader => "shader",
+            Self::ResourcePack => "resourcepack",
         }
     }
 }
@@ -225,6 +230,10 @@ pub fn modrinth_facets(mc: &str, loaders: &[&str]) -> String {
 }
 
 /// Shader packs made for Iris or OptiFine (Iris loads both formats).
+pub fn modrinth_resource_pack_facets(mc: &str) -> String {
+    serde_json::to_string(&vec![vec!["project_type:resourcepack".to_string()], vec![format!("versions:{mc}")]]).unwrap()
+}
+
 pub fn modrinth_shader_facets(mc: &str) -> String {
     serde_json::to_string(&vec![
         vec!["project_type:shader".to_string()],
@@ -451,10 +460,10 @@ pub async fn search(
     let enc = |s: &str| urlencode(s);
     match source {
         Source::Modrinth => {
-            let loaders = mod_loaders(inst.loader)?;
             let facets = match kind {
-                Kind::Mod => modrinth_facets(&inst.mc_version, loaders.modrinth),
+                Kind::Mod => modrinth_facets(&inst.mc_version, mod_loaders(inst.loader)?.modrinth),
                 Kind::Shader => modrinth_shader_facets(&inst.mc_version),
+                Kind::ResourcePack => modrinth_resource_pack_facets(&inst.mc_version),
             };
             let index = match sort {
                 Sort::Relevance => "relevance",
@@ -477,7 +486,6 @@ pub async fn search(
             Ok(page)
         }
         Source::Curseforge => {
-            let lt = cf_loader_filter(mod_loaders(inst.loader)?.curseforge);
             // 1 Featured, 2 Popularity, 3 LastUpdated, 6 TotalDownloads, 11 ReleasedDate
             let field = match sort {
                 Sort::Relevance => if query.trim().is_empty() { 2 } else { 1 },
@@ -487,10 +495,11 @@ pub async fn search(
             };
             // CurseForge caps index + pageSize at 10,000.
             let offset = offset.min(10_000 - limit);
-            // Shader packs aren't tied to a mod loader.
+            // Shader and resource packs aren't tied to a mod loader.
             let class = match kind {
-                Kind::Mod => format!("classId={CF_CLASS_MODS}{lt}"),
+                Kind::Mod => format!("classId={CF_CLASS_MODS}{}", cf_loader_filter(mod_loaders(inst.loader)?.curseforge)),
                 Kind::Shader => format!("classId={CF_CLASS_SHADERS}"),
+                Kind::ResourcePack => format!("classId={CF_CLASS_RESOURCE_PACKS}"),
             };
             let path = format!(
                 "/mods/search?gameId={CF_MINECRAFT}&{class}&searchFilter={}&gameVersion={}&sortField={field}&sortOrder=desc&index={offset}&pageSize={limit}",
@@ -504,36 +513,35 @@ pub async fn search(
 
 /// Versions of a project that work with the instance, newest first.
 pub async fn versions(l: &Launcher, source: Source, kind: Kind, project_id: &str, inst: &Instance) -> Result<Vec<ModVersion>> {
+    versions_for(l, source, kind, project_id, inst, true).await
+}
+
+/// `for_mc`: only versions made for the instance's Minecraft version. Resource packs
+/// made for another version often still work, so their install can look wider.
+pub(crate) async fn versions_for(l: &Launcher, source: Source, kind: Kind, project_id: &str, inst: &Instance, for_mc: bool) -> Result<Vec<ModVersion>> {
     match source {
         Source::Modrinth => {
-            let ml = mod_loaders(inst.loader)?;
             let loaders = match kind {
-                Kind::Mod => serde_json::to_string(ml.modrinth)?,
+                Kind::Mod => serde_json::to_string(mod_loaders(inst.loader)?.modrinth)?,
                 Kind::Shader => "[\"iris\",\"optifine\"]".to_string(),
+                Kind::ResourcePack => "[\"minecraft\"]".to_string(),
             };
-            let url = format!(
-                "{}/project/{}/version?loaders={}&game_versions={}",
-                modrinth_api(),
-                urlencode(project_id),
-                urlencode(&loaders),
-                urlencode(&format!("[\"{}\"]", inst.mc_version)),
-            );
+            let mc = if for_mc { format!("&game_versions={}", urlencode(&format!("[\"{}\"]", inst.mc_version))) } else { String::new() };
+            let url = format!("{}/project/{}/version?loaders={}{mc}", modrinth_api(), urlencode(project_id), urlencode(&loaders));
             Ok(parse_modrinth_versions(&modrinth_get(l, &url).await?, project_id))
         }
         Source::Curseforge => {
-            let ml = mod_loaders(inst.loader)?;
+            let ml = if kind == Kind::Mod { Some(mod_loaders(inst.loader)?) } else { None };
             let id: u64 = project_id.parse().map_err(|_| anyhow!("CurseForge project ids are numbers"))?;
             // The files endpoint takes one loader type; with several, filter here.
-            let loader = match (kind, ml.curseforge) {
-                (Kind::Mod, [one]) => format!("&modLoaderType={one}"),
+            let loader = match ml.as_ref().map(|m| m.curseforge) {
+                Some([one]) => format!("&modLoaderType={one}"),
                 _ => String::new(),
             };
-            let path = format!(
-                "/mods/{id}/files?gameVersion={}{loader}&pageSize=50",
-                urlencode(&inst.mc_version)
-            );
+            let mc = if for_mc { format!("gameVersion={}&", urlencode(&inst.mc_version)) } else { String::new() };
+            let path = format!("/mods/{id}/files?{mc}pageSize=50{loader}");
             let mut files = cf_get(l, &path).await?;
-            if kind == Kind::Mod && ml.curseforge.len() > 1 {
+            if let Some(ml) = ml.filter(|m| m.curseforge.len() > 1) {
                 if let Some(arr) = files["data"].as_array_mut() {
                     arr.retain(|f| cf_file_matches(f, ml.curseforge_names));
                 }
@@ -1077,6 +1085,13 @@ pub fn urlencode(s: &str) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn resource_pack_facets() {
+        let f = modrinth_resource_pack_facets("1.21.1");
+        assert!(f.contains("project_type:resourcepack") && f.contains("versions:1.21.1"), "{f}");
+        assert_eq!(serde_json::to_string(&Kind::ResourcePack).unwrap(), "\"resourcepack\"");
+    }
 
     #[test]
     fn facets() {

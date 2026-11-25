@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 
-use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, logfiles, mod_check, mod_sets, modpack, instances, launch, loaders, mods, mojang, outfit, process, servers, projects, scene, shaders, storage, Launcher};
+use crate::{auth, browse, claude_code, config, crash, discord, live, live_content, logfiles, mod_check, mod_sets, modpack, instances, launch, loaders, mods, mojang, outfit, process, servers, projects, resource_packs, scene, shaders, storage, Launcher};
 
 #[derive(Clone)]
 struct AppState {
@@ -119,6 +119,9 @@ pub fn router(l: Launcher, token: String) -> Router {
         .route("/instances/{id}/mods/{file}", delete(delete_mod))
         .route("/instances/{id}/mods/{file}/enabled", post(set_mod_enabled))
         .route("/instances/{id}/online-mods", post(install_online))
+        .route("/instances/{id}/resourcepacks", get(list_resource_packs).post(install_resource_pack))
+        .route("/instances/{id}/resourcepacks/{file}", delete(delete_resource_pack))
+        .route("/instances/{id}/resourcepacks/{file}/enabled", post(enable_resource_pack))
         .route("/instances/{id}/shaders", get(list_shaders).post(install_shader))
         .route("/instances/{id}/shaders/{file}", delete(delete_shader))
         .route("/instances/{id}/updates", get(check_updates).post(apply_updates))
@@ -583,6 +586,7 @@ async fn browse_search(State(s): State<AppState>, Path(source): Path<String>, Qu
     let tags = match q.kind {
         browse::Kind::Mod => browse::prune_tags(&s.l, &inst.id).await,
         browse::Kind::Shader => shaders::load_tags(&s.l, &inst.id).await,
+        browse::Kind::ResourcePack => shaders::load_pack_tags(&s.l, &inst.id, browse::Kind::ResourcePack).await,
     };
     let installed: std::collections::HashSet<_> =
         tags.values().filter(|t| t.source == source).map(|t| t.project_id.clone()).collect();
@@ -607,6 +611,24 @@ async fn browse_versions(State(s): State<AppState>, Path((source, pid)): Path<(S
 
 async fn install_online(State(s): State<AppState>, Path(id): Path<String>, Json(req): Json<browse::InstallRequest>) -> R<browse::InstallReport> {
     Ok(Json(browse::install(&s.l, &id, req).await?))
+}
+
+async fn list_resource_packs(State(s): State<AppState>, Path(id): Path<String>) -> R<resource_packs::PackList> {
+    Ok(Json(resource_packs::list(&s.l, &id).await?))
+}
+
+async fn install_resource_pack(State(s): State<AppState>, Path(id): Path<String>, Json(req): Json<browse::InstallRequest>) -> R<browse::InstallReport> {
+    Ok(Json(resource_packs::install(&s.l, &id, req).await?))
+}
+
+async fn delete_resource_pack(State(s): State<AppState>, Path((id, file)): Path<(String, String)>) -> R<Value> {
+    resource_packs::delete(&s.l, &id, &file).await?;
+    Ok(ok())
+}
+
+async fn enable_resource_pack(State(s): State<AppState>, Path((id, file)): Path<(String, String)>, Json(b): Json<EnabledBody>) -> R<Value> {
+    resource_packs::set_enabled(&s.l, &id, &file, b.enabled).await?;
+    Ok(ok())
 }
 
 async fn list_shaders(State(s): State<AppState>, Path(id): Path<String>) -> R<shaders::ShaderList> {

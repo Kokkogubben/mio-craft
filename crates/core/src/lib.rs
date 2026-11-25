@@ -38,6 +38,7 @@ pub mod paths;
 pub mod platform;
 pub mod process;
 pub mod projects;
+pub mod resource_packs;
 pub mod scene;
 pub mod secrets;
 pub mod servers;
